@@ -19,5 +19,7 @@ jobs:
         with:
           ignore-missing-flake-lock: false
           fail-mode: true
-      - name: Build and Check
+      - name: Build
+        run: nix build
+      - name: Check
         run: nix flake check
