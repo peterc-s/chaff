@@ -42,7 +42,10 @@
         formatter = treefmtConfig.config.build.wrapper;
 
         packages.default = naersk'.buildPackage {
-          src = ./.;
+          src = builtins.path {
+            path = ./.;
+            name = "chaff";
+          };
           buildInputs = with pkgs; [];
         };
 
