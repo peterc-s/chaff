@@ -46,7 +46,7 @@
             path = ./.;
             name = "chaff";
           };
-          buildInputs = with pkgs; [];
+          buildInputs = [];
         };
 
         devShells.default = pkgs.mkShell {
