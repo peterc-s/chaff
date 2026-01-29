@@ -1,6 +1,90 @@
-[package]
-name = "chaff"
-version = "0.1.0"
+[workspace.package]
 edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/peterc-s/chaff"
+keywords = [ "privacy", "fingerprinting", "security", "anonymity" ]
+categories = [ "network-programming" ]
 
-[dependencies]
+# In line with Arti: https://gitlab.torproject.org/tpo/core/arti/-/tree/main#minimum-supported-rust-version
+rust-version = "1.86.0"
+
+
+[workspace]
+# Please keep this list topologically sorted by dependency relation, so
+# that every crate appears before any other crate that depends on it.
+# https://blog.iany.me/2020/10/gotchas-to-publish-rust-crates-in-a-workspace/#cyclic-dependencies
+members = [
+    "crates/chaff"
+]
+
+# https://doc.rust-lang.org/cargo/reference/workspaces.html#virtual-workspace
+resolver = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.release-small]
+inherits = "release"
+strip = "debuginfo"
+opt-level = "s"
+
+[profile.bench]
+debug = 2
+strip = "none"
+
+[workspace.lints.rust]
+# Error on warning
+warnings = { level = "deny", priority = -1 }
+
+# Basic good practices
+non_ascii_idents = "forbid"
+unsafe_code = "warn"
+
+# Other opinionated lints
+macro_use_extern_crate = "deny"
+absolute_paths_not_starting_with_crate = "deny"
+explicit_outlives_requirements = "warn"
+missing_abi = "deny"
+single_use_lifetimes = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+meta_variable_misuse = "warn" # may have false positives
+keyword_idents_2024 = "warn"
+missing_docs = "warn" # may turn off if this becomes an issue
+redundant_lifetimes = "warn"
+unit_bindings = "warn"
+trivial_casts = "warn" # may have false positives
+trivial_numeric_casts = "warn"
+unsafe_attr_outside_unsafe = "warn"
+unused_import_braces = "warn"
+variant_size_differences = "warn" # should be assessed case-by-case
+
+[workspace.lints.clippy]
+cargo = { level = "warn", priority = -1 }
+wildcard_dependencies = "warn"
+cargo_common_metadata = "warn"
+
+allow_attributes = "warn"
+clone_on_ref_ptr = "warn"
+implicit_clone = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+exit = "warn"
+undocumented_unsafe_blocks = "warn"
+unused_result_ok = "warn"
+unused_trait_names = "warn"
+unwrap_used = "warn"
+expect_used = "warn" # may turn off if this becomes an issue
+
+# Nursery
+nursery = { level = "warn", priority = -1 }
+missing_const_for_fn = "allow" # const still being worked on so may give false positives
+
+# Pedantic
+pedantic = { level = "warn", priority = -1 }
+cast_precision_loss = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+struct_excessive_bools = "allow"
