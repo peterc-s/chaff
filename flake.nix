@@ -60,8 +60,18 @@
           formatting = treefmtConfig.config.build.check self;
           package = self.packages.${system}.default;
           clippy = naersk'.buildPackage {
-            src = ./.;
+            src = builtins.path {
+              path = ./.;
+              name = "chaff";
+            };
             mode = "clippy";
+          };
+          test = naersk'.buildPackage {
+            src = builtins.path {
+              path = ./.;
+              name = "chaff";
+            };
+            mode = "test";
           };
         };
       }

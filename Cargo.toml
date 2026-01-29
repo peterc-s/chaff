@@ -14,7 +14,8 @@ rust-version = "1.86.0"
 # that every crate appears before any other crate that depends on it.
 # https://blog.iany.me/2020/10/gotchas-to-publish-rust-crates-in-a-workspace/#cyclic-dependencies
 members = [
-    "crates/chaff"
+    "crates/chaff",
+    "crates/chaff-cli",
 ]
 
 # https://doc.rust-lang.org/cargo/reference/workspaces.html#virtual-workspace
@@ -51,7 +52,7 @@ unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 meta_variable_misuse = "warn" # may have false positives
 keyword_idents_2024 = "warn"
-missing_docs = "warn" # may turn off if this becomes an issue
+# missing_docs = "warn" # enable when naersk issue #377 closed.
 redundant_lifetimes = "warn"
 unit_bindings = "warn"
 trivial_casts = "warn" # may have false positives

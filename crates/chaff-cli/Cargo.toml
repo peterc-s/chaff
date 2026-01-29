@@ -1,6 +1,6 @@
 [package]
-name = "chaff"
-description = "Library for implementing and testing Website Fingerprinting defences"
+name = "chaff-cli"
+description = "Command line for Chaff - a library for implementing Website Fingerprinting defences."
 version = "0.1.0"
 readme = "README.md"
 edition.workspace = true
@@ -16,3 +16,4 @@ workspace = true
 default = []
 
 [dependencies]
+
