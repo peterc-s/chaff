@@ -49,13 +49,15 @@
             path = ./.;
             name = "chaff";
           };
-          buildInputs = [];
+          buildInputs = with pkgs; [libpcap];
+          doDoc = true;
         };
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             toolchain
           ];
+          buildInputs = with pkgs; [libpcap];
           RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
         };
 
@@ -67,6 +69,7 @@
               path = ./.;
               name = "chaff";
             };
+            buildInputs = with pkgs; [libpcap];
             mode = "clippy";
           };
           test = naersk'.buildPackage {
@@ -74,6 +77,7 @@
               path = ./.;
               name = "chaff";
             };
+            buildInputs = with pkgs; [libpcap];
             mode = "test";
           };
         };

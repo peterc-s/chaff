@@ -5,9 +5,9 @@ To build, install `nix` (the package manager) and run:
 nix build
 ```
 
-To run:
+To build the documentation, run:
 ```sh
-nix run
+nix build .#default.doc
 ```
 
 ## Development
