@@ -59,6 +59,11 @@ impl From<mac_address::MacAddressError> for CaptureError {
     }
 }
 
+/// Find an interface with the given `ifname`.
+pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
+    Ok(Device::list()?.into_iter().find(|dev| dev.name == *ifname))
+}
+
 /// Activates the given `capture` for `ms` milliseconds and produces a [`crate::trace::Trace`].
 ///
 /// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
