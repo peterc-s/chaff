@@ -17,4 +17,5 @@ workspace = true
 default = []
 
 [dependencies]
+bpaf = { version = "0.9.22", features = ["derive"] }
 
