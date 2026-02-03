@@ -33,7 +33,9 @@
         };
 
         # Toolchain for development use
-        toolchain = pkgs.rust-bin.stable.latest.default;
+        toolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = ["rust-analyzer" "rust-src"];
+        };
         naersk' = naersk.lib.${system}.override {
           cargo = toolchain;
           rustc = toolchain;
@@ -43,7 +45,9 @@
         # - in the README
         # - in the workspace Cargo.toml
         # This should follow Arti.
-        toolchainMsrv = pkgs.rust-bin.stable."1.86.0".default;
+        toolchainMsrv = pkgs.rust-bin.stable."1.86.0".default.override {
+          extensions = ["rust-analyzer" "rust-src"];
+        };
         naerskMsrv = naersk.lib.${system}.override {
           cargo = toolchainMsrv;
           rustc = toolchainMsrv;
