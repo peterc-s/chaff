@@ -396,7 +396,7 @@ mod tests {
         assert!(dir.is_err());
     }
 
-    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`].
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::ETHERNET`.
     #[test]
     fn test_packets_to_trace_ethernet_from_file() {
         // Construct path to pcap
@@ -417,8 +417,6 @@ mod tests {
 
         let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
 
-        println!("{:?}", trace.timing_deltas);
-
         // The following values were found by inspecting the pcap with `tshark`.
 
         // Since we used the first packet source MAC as the local MAC, this should
@@ -433,5 +431,59 @@ mod tests {
         assert_eq!(trace.sizes[0], 62);
         assert_eq!(trace.sizes[1], 62);
         assert_eq!(trace.sizes[3], 533);
+    }
+
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
+    #[test]
+    fn test_packets_to_trace_sll2_type_0_from_file() {
+        // Construct path to pcap
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-sll2-single-type-0.pcap");
+
+        // Create a capture from the file
+        let mut cap = Capture::from_file(path).unwrap();
+        let linktype = cap.get_datalink();
+
+        // Fake mac
+        let local_mac = MacAddress::from([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe]);
+
+        let mut packets = Vec::new();
+        while let Ok(pkt) = cap.next_packet() {
+            packets.push((*pkt.header, pkt.data.to_vec()));
+        }
+
+        let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
+
+        // The following values were found by inspecting the pcap with `tshark`.
+        assert!(matches!(trace.directions[0], Direction::Receive));
+        assert_eq!(trace.timing_deltas[0], 0);
+        assert_eq!(trace.sizes[0], 144);
+    }
+
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
+    #[test]
+    fn test_packets_to_trace_sll2_type_4_from_file() {
+        // Construct path to pcap
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-sll2-single-type-4.pcap");
+
+        // Create a capture from the file
+        let mut cap = Capture::from_file(path).unwrap();
+        let linktype = cap.get_datalink();
+
+        // Fake mac
+        let local_mac = MacAddress::from([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe]);
+
+        let mut packets = Vec::new();
+        while let Ok(pkt) = cap.next_packet() {
+            packets.push((*pkt.header, pkt.data.to_vec()));
+        }
+
+        let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
+
+        // The following values were found by inspecting the pcap with `tshark`.
+        assert!(matches!(trace.directions[0], Direction::Send));
+        assert_eq!(trace.timing_deltas[0], 0);
+        assert_eq!(trace.sizes[0], 144);
     }
 }
