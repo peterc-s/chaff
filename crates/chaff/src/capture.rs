@@ -5,7 +5,7 @@
 
 use std::{error::Error, fmt, time::Duration};
 
-use mac_address::mac_address_by_name;
+use mac_address::{MacAddress, mac_address_by_name};
 use pcap::{Capture, Device, Linktype, PacketHeader};
 
 use crate::trace::{Direction, Trace};
@@ -68,18 +68,23 @@ pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
     Ok(Device::list()?.into_iter().find(|dev| dev.name == *ifname))
 }
 
+/// Get the [`MacAddress`] of a [`Device`].
+fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
+    mac_address_by_name(&device.name)?.ok_or_else(|| CaptureError::NoMac(device.name.clone()))
+}
+
 /// Activates the given `capture` for `ms` milliseconds and produces a [`crate::trace::Trace`].
 ///
 /// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
 pub fn capture_for_ms(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
     let device = device.unwrap_or(Device::lookup()?.ok_or(CaptureError::NoDevice)?);
-    let capture = Capture::from_device(device.clone())?;
+    let mac_address = get_device_mac(&device)?;
 
+    let capture = Capture::from_device(device)?;
     let mut open_cap = capture.open()?;
     let linktype = open_cap.get_datalink();
 
     let break_handle = open_cap.breakloop_handle();
-
     let capture_thread = std::thread::spawn(move || {
         // TODO: tune capacity to minimise reallocs?
         let mut packets: Vec<(PacketHeader, Vec<u8>)> = Vec::with_capacity(4096);
@@ -106,7 +111,7 @@ pub fn capture_for_ms(duration: Duration, device: Option<Device>) -> Result<Trac
         .join()
         .map_err(|_| CaptureError::CaptureThreadPanic)??;
 
-    packets_to_trace(&packets, linktype, &device)
+    packets_to_trace(&packets, linktype, mac_address)
 }
 
 /// Detemine the direction of a packet given the packet data, the [`pcap::Linktype`] (only `ETHERNET`,
@@ -196,7 +201,7 @@ fn packet_ts_to_ms(header: PacketHeader) -> u64 {
 fn packets_to_trace(
     packets: &[(PacketHeader, Vec<u8>)],
     linktype: Linktype,
-    device: &Device,
+    mac_address: MacAddress,
 ) -> Result<Trace, CaptureError> {
     if packets.is_empty() {
         return Ok(Trace {
@@ -206,9 +211,7 @@ fn packets_to_trace(
         });
     }
 
-    let mac_address = mac_address_by_name(&device.name)?
-        .ok_or_else(|| CaptureError::NoMac(device.name.clone()))?
-        .bytes();
+    let mac_address = mac_address.bytes();
 
     let directions: Box<[Direction]> = packets
         .iter()
@@ -247,4 +250,150 @@ fn packets_to_trace(
         timing_deltas,
         sizes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ethernet_direction_send() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data
+        let mut data = [0u8; 14];
+        data[6..12].copy_from_slice(&local_mac);
+
+        // Check
+        let dir = determine_packet_direction(&data, Linktype::ETHERNET, local_mac).unwrap();
+        assert!(matches!(dir, Direction::Send));
+    }
+
+    #[test]
+    fn test_ethernet_direction_recv() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data
+        let mut data = [0u8; 14];
+        data[..6].copy_from_slice(&local_mac);
+
+        let dir = determine_packet_direction(&data, Linktype::ETHERNET, local_mac).unwrap();
+        assert!(matches!(dir, Direction::Receive));
+    }
+
+    #[test]
+    fn test_ethernet_too_short() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data
+        let data = [0u8; 6];
+
+        let dir = determine_packet_direction(&data, Linktype::ETHERNET, local_mac);
+        assert!(dir.is_err());
+    }
+
+    #[test]
+    fn test_linux_sll_direction_send() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data with packet type 0x0004
+        let data = [0x00, 0x04];
+
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL, local_mac).unwrap();
+        assert!(matches!(dir, Direction::Send));
+    }
+
+    #[test]
+    fn test_linux_sll_direction_recv() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data
+        let mut data = [0x00, 0x00];
+
+        // Iterate through receive packet types
+        for pkt_type in 0u8..=3u8 {
+            data[1] = pkt_type;
+            let dir = determine_packet_direction(&data, Linktype::LINUX_SLL, local_mac).unwrap();
+            assert!(matches!(dir, Direction::Receive));
+        }
+    }
+
+    #[test]
+    fn test_linux_sll_direction_err() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data with packet type 0x0005
+        let data = [0x00, 0x05];
+
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL, local_mac);
+        assert!(dir.is_err());
+    }
+
+    #[test]
+    fn test_linux_sll_too_short() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        let data = [0x00];
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL, local_mac);
+        assert!(dir.is_err());
+    }
+
+    #[test]
+    fn test_linux_sll2_direction_send() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data with packet type 0x04
+        let mut data = [0; 11];
+        data[10] = 0x04;
+
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL2, local_mac).unwrap();
+        assert!(matches!(dir, Direction::Send));
+    }
+
+    #[test]
+    fn test_linux_sll2_direction_recv() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data with packet type 0x05
+        let mut data = [0; 11];
+
+        // Iterate through receive packet types
+        for pkt_type in 0u8..=3u8 {
+            data[10] = pkt_type;
+            let dir = determine_packet_direction(&data, Linktype::LINUX_SLL2, local_mac).unwrap();
+            assert!(matches!(dir, Direction::Receive));
+        }
+    }
+
+    #[test]
+    fn test_linux_sll2_direction_err() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        // Fake packet data with packet type 0x05
+        let mut data = [0; 11];
+        data[10] = 0x05;
+
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL2, local_mac);
+        assert!(dir.is_err());
+    }
+
+    #[test]
+    fn test_linux_sll2_too_short() {
+        // Fake local MAC address
+        let local_mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+        let data = [0; 10];
+        let dir = determine_packet_direction(&data, Linktype::LINUX_SLL2, local_mac);
+        assert!(dir.is_err());
+    }
 }
