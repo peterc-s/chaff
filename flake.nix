@@ -31,6 +31,10 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
+        src = builtins.path {
+          path = ./.;
+          name = "chaff";
+        };
 
         # Toolchain for development use
         toolchain = pkgs.rust-bin.stable.latest.default.override {
@@ -65,11 +69,7 @@
 
         # Default package for `nix build`
         packages.default = naersk'.buildPackage {
-          inherit buildInputs;
-          src = builtins.path {
-            path = ./.;
-            name = "chaff";
-          };
+          inherit buildInputs src;
           doDoc = true;
         };
 
@@ -104,26 +104,17 @@
 
           # Do a check with the toolchain set at the MSRV
           msrv = naerskMsrv.buildPackage {
-            inherit buildInputs;
-            src = ./.;
+            inherit buildInputs src;
             mode = "check";
           };
 
           # Lint and test
           clippy = naersk'.buildPackage {
-            inherit buildInputs;
-            src = builtins.path {
-              path = ./.;
-              name = "chaff";
-            };
+            inherit buildInputs src;
             mode = "clippy";
           };
           test = naersk'.buildPackage {
-            inherit buildInputs;
-            src = builtins.path {
-              path = ./.;
-              name = "chaff";
-            };
+            inherit buildInputs src;
             mode = "test";
           };
         };
