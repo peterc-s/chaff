@@ -1,9 +1,6 @@
 //! The command-line interface for interacting with the `chaff` anti website fingerprinting
 //! framework.
 
-// The derive Bpaf below causes a missing docs lint.
-#![expect(missing_docs)]
-
 use std::{error::Error, fmt};
 
 use bpaf::Bpaf;
