@@ -1,8 +1,6 @@
 //! Use [libpcap](https://github.com/the-tcpdump-group/libpcap) through the [pcap] crate to capture
 //! a [`crate::trace::Trace`].
 
-// TODO: Tests
-
 use std::{error::Error, fmt, time::Duration};
 
 use mac_address::{MacAddress, mac_address_by_name};
@@ -187,7 +185,6 @@ fn determine_packet_direction(
 }
 
 /// Utility function to convert the [`pcap::PacketHeader::ts`] into milliseconds.
-// TODO: check for correctness
 #[expect(clippy::cast_sign_loss)]
 fn packet_ts_to_ms(header: PacketHeader) -> u64 {
     let tv = header.ts;
@@ -253,8 +250,10 @@ fn packets_to_trace(
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_ethernet_direction_send() {
@@ -395,5 +394,44 @@ mod tests {
         let data = [0; 10];
         let dir = determine_packet_direction(&data, Linktype::LINUX_SLL2, local_mac);
         assert!(dir.is_err());
+    }
+
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`].
+    #[test]
+    fn test_packets_to_trace_ethernet_from_file() {
+        // Construct path to pcap
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-http-5.pcap");
+
+        // Create a capture from the file
+        let mut cap = Capture::from_file(path).unwrap();
+        let linktype = cap.get_datalink();
+
+        // First packet source
+        let local_mac = MacAddress::from([0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+
+        let mut packets = Vec::new();
+        while let Ok(pkt) = cap.next_packet() {
+            packets.push((*pkt.header, pkt.data.to_vec()));
+        }
+
+        let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
+
+        println!("{:?}", trace.timing_deltas);
+
+        // The following values were found by inspecting the pcap with `tshark`.
+
+        // Since we used the first packet source MAC as the local MAC, this should
+        // be send. The second packet is a SYN ACK from the remote.
+        assert!(matches!(trace.directions[0], Direction::Send));
+        assert!(matches!(trace.directions[1], Direction::Receive));
+
+        assert_eq!(trace.timing_deltas[0], 0);
+        assert_eq!(trace.timing_deltas[1], 911);
+
+        // `tshark -r ./test-pcaps/test-http-5.pcap -T fields -e frame.len`
+        assert_eq!(trace.sizes[0], 62);
+        assert_eq!(trace.sizes[1], 62);
+        assert_eq!(trace.sizes[3], 533);
     }
 }
