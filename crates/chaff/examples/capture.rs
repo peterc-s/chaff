@@ -4,10 +4,10 @@ use chaff::capture::capture_for_ms;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting capture");
-    let trace = capture_for_ms(std::time::Duration::from_secs(10))?;
+    let trace = capture_for_ms(std::time::Duration::from_secs(10), None)?;
     println!("Got {} packets.", trace.directions.len());
 
-    if trace.directions.len() > 0 {
+    if !trace.directions.is_empty() {
         let first_packet = (
             &trace.directions[0],
             &trace.timing_deltas[0],

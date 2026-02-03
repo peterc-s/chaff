@@ -65,6 +65,7 @@ variant_size_differences = "warn" # should be assessed case-by-case
 cargo = { level = "warn", priority = -1 }
 wildcard_dependencies = "warn"
 cargo_common_metadata = "warn"
+multiple_crate_versions = "allow"
 
 allow_attributes = "warn"
 clone_on_ref_ptr = "warn"
