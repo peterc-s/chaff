@@ -10,6 +10,10 @@ categories.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "chaff"
+path = "src/main.rs"
+
 [lints]
 workspace = true
 
@@ -17,5 +21,6 @@ workspace = true
 default = []
 
 [dependencies]
-bpaf = { version = "0.9.22", features = ["derive"] }
+chaff = { version = "0.1.0", path = "../chaff/" }
 
+bpaf = { version = "0.9.22", features = ["derive"] }

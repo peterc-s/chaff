@@ -84,6 +84,7 @@ name = "chaff-cli"
 version = "0.1.0"
 dependencies = [
  "bpaf",
+ "chaff",
 ]
 
 [[package]]
