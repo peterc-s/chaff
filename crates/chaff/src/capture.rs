@@ -10,6 +10,9 @@ use pcap::{Capture, Device, Linktype, PacketHeader};
 
 use crate::trace::{Direction, Trace};
 
+// TODO: see what other crates do about errors, should these be consolidated into a single
+// errors.rs?
+
 /// Capture error type.
 #[derive(Debug)]
 pub enum CaptureError {
@@ -34,6 +37,7 @@ pub enum CaptureError {
 
 impl Error for CaptureError {}
 
+// TODO: Find out how to format error outputs properly, so no more "Error: Pcap(PcapError("Attempt to create packet socket failed - CAP_NET_RAW may be required"))"
 impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -178,7 +182,7 @@ fn determine_packet_direction(
 }
 
 /// Utility function to convert the [`pcap::PacketHeader::ts`] into milliseconds.
-/// TODO: check for correctness
+// TODO: check for correctness
 #[expect(clippy::cast_sign_loss)]
 fn packet_ts_to_ms(header: PacketHeader) -> u64 {
     let tv = header.ts;
