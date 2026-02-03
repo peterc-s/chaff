@@ -1,10 +1,12 @@
 //! Use [libpcap](https://github.com/the-tcpdump-group/libpcap) through the [pcap] crate to capture
 //! a [`crate::trace::Trace`].
 
+// TODO: Tests
+
 use std::{error::Error, fmt, time::Duration};
 
 use mac_address::mac_address_by_name;
-use pcap::{Capture, Device, Inactive, Linktype, PacketHeader};
+use pcap::{Capture, Device, Linktype, PacketHeader};
 
 use crate::trace::{Direction, Trace};
 
@@ -57,26 +59,11 @@ impl From<mac_address::MacAddressError> for CaptureError {
     }
 }
 
-/// Creates an [`pcap::Capture<Inactive>`]. Selects a device via [`pcap::Device::lookup()`].
-pub fn create_capture() -> Result<Capture<Inactive>, CaptureError> {
-    let device = Device::lookup()?;
-
-    // Create a capture from the device if one exists.
-    if let Some(device) = device {
-        Ok(Capture::from_device(device)?)
-    } else {
-        Err(CaptureError::NoDevice)
-    }
-}
-
 /// Activates the given `capture` for `ms` milliseconds and produces a [`crate::trace::Trace`].
-#[expect(clippy::dbg_macro)]
-pub fn capture_for_ms(duration: Duration) -> Result<Trace, CaptureError> {
-    // TODO: move this out if possible, but need device for direction
-    let device = Device::lookup()?.ok_or(CaptureError::NoDevice)?;
-
-    dbg!(&device);
-
+///
+/// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
+pub fn capture_for_ms(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
+    let device = device.unwrap_or(Device::lookup()?.ok_or(CaptureError::NoDevice)?);
     let capture = Capture::from_device(device.clone())?;
 
     let mut open_cap = capture.open()?;
@@ -85,12 +72,11 @@ pub fn capture_for_ms(duration: Duration) -> Result<Trace, CaptureError> {
     let break_handle = open_cap.breakloop_handle();
 
     let capture_thread = std::thread::spawn(move || {
-        let mut packets: Vec<(PacketHeader, Vec<u8>)> = Vec::new();
+        // TODO: tune capacity to minimise reallocs?
+        let mut packets: Vec<(PacketHeader, Vec<u8>)> = Vec::with_capacity(4096);
         loop {
             let maybe_pkt = open_cap.next_packet();
             if let Ok(pkt) = maybe_pkt {
-                // FIXME: this is probably slow, profile and if it is, use one big vec with
-                // offsets or don't store the data at all (other than bytes useful for packet direction?)
                 packets.push((*pkt.header, pkt.data.to_vec()));
             } else if matches!(maybe_pkt, Err(pcap::Error::NoMorePackets)) {
                 println!("Timeout expired.");
@@ -111,104 +97,115 @@ pub fn capture_for_ms(duration: Duration) -> Result<Trace, CaptureError> {
         .join()
         .map_err(|_| CaptureError::CaptureThreadPanic)??;
 
-    packets_to_trace(&packets, linktype, device)
+    packets_to_trace(&packets, linktype, &device)
+}
+
+/// Detemine the direction of a packet given the packet data, the [`pcap::Linktype`] (only `ETHERNET`,
+/// `LINUX_SLL`, and `LINUX_SLL2` are implemented), and the MAC address (required for `ETHERNET`).
+fn determine_packet_direction(
+    data: &[u8],
+    linktype: Linktype,
+    local_mac: [u8; 6],
+) -> Result<Direction, CaptureError> {
+    match linktype {
+        // Reference: https://ieeexplore.ieee.org/document/7428776
+        Linktype::ETHERNET => {
+            // make sure the bytes we want are there
+            if data.len() < 12 {
+                return Err(CaptureError::InvalidPacket(
+                    "Ethernet frame too short".into(),
+                ));
+            }
+
+            // header has 6 octets for destination address, followed by 6 bytes for source address
+            let src_mac = &data[6..12];
+
+            // if we are operating in promiscuous mode, it is possible that neither source nor
+            // destination is us, so just check the source address
+            Ok(if src_mac == local_mac {
+                Direction::Send
+            } else {
+                Direction::Receive
+            })
+        }
+
+        // Reference: https://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL.html
+        Linktype::LINUX_SLL => {
+            // make sure the bytes we want are there
+            if data.len() < 2 {
+                return Err(CaptureError::InvalidPacket("SLL frame too short".into()));
+            }
+
+            let packet_type = u16::from_be_bytes([data[0], data[1]]);
+            match packet_type {
+                // 0-3 are all sent by someone else
+                0..=3 => Ok(Direction::Receive),
+                // 4 is sent by us
+                4 => Ok(Direction::Send),
+                _ => Err(CaptureError::InvalidPacket(format!(
+                    "Invalid SLL type: {packet_type}"
+                ))),
+            }
+        }
+
+        // Reference: https://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL2.html
+        Linktype::LINUX_SLL2 => {
+            // make sure the bytes we want are there
+            if data.len() < 11 {
+                return Err(CaptureError::InvalidPacket("SLL2 frame too short".into()));
+            }
+
+            match data[10] {
+                // 0-3 are all sent by someone else
+                0..=3 => Ok(Direction::Receive),
+                // 4 is sent by us
+                4 => Ok(Direction::Send),
+                _ => Err(CaptureError::InvalidPacket(format!(
+                    "Invalid SLL2 type: {}",
+                    data[10]
+                ))),
+            }
+        }
+        _ => Err(CaptureError::InvalidPacket(format!(
+            "Unsupported linktype: {linktype:?}"
+        ))),
+    }
+}
+
+/// Utility function to convert the [`pcap::PacketHeader::ts`] into milliseconds.
+/// TODO: check for correctness
+#[expect(clippy::cast_sign_loss)]
+fn packet_ts_to_ms(header: PacketHeader) -> u64 {
+    let tv = header.ts;
+    let sec_ms = (tv.tv_sec as u64) * 1000;
+    let usec_ms = (tv.tv_usec as u64) / 1000;
+
+    sec_ms + usec_ms
 }
 
 /// Converts packet information into traces
-// TODO: Abstract this out a bit.
-// TODO: add error handling.
 fn packets_to_trace(
     packets: &[(PacketHeader, Vec<u8>)],
     linktype: Linktype,
-    device: Device,
+    device: &Device,
 ) -> Result<Trace, CaptureError> {
-    // TODO: maybe move this elsewhere
-    #[expect(clippy::cast_sign_loss)]
-    fn packet_ts_to_ms(header: PacketHeader) -> u64 {
-        let tv = header.ts;
-        let sec_ms = (tv.tv_sec as u64) * 1000;
-        let usec_ms = (tv.tv_usec as u64) / 1000;
-
-        sec_ms + usec_ms
+    if packets.is_empty() {
+        return Ok(Trace {
+            directions: Box::default(),
+            timing_deltas: Box::default(),
+            sizes: Box::default(),
+        });
     }
 
     let mac_address = mac_address_by_name(&device.name)?
-        .ok_or(CaptureError::NoMac(device.name))?
+        .ok_or_else(|| CaptureError::NoMac(device.name.clone()))?
         .bytes();
 
-    // Get directions vector
-    let directions = match linktype {
-        // Reference: https://ieeexplore.ieee.org/document/7428776
-        Linktype::ETHERNET => packets
-            .iter()
-            .map(|(_, data)| {
-                // if data.len() < 14 {
-                //     todo!("This should cause an error, packet couldn't possibly be this size.")
-                // }
-
-                // header has 6 octets for dest, then 6 bytes for src
-                let src_mac_address = &data[6..12];
-
-                if mac_address == src_mac_address {
-                    Direction::Send
-                } else {
-                    Direction::Receive
-                }
-            })
-            .collect(),
-
-        // Reference: https://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL.html
-        Linktype::LINUX_SLL => packets
-            .iter()
-            .map(|(_, data)| {
-                // if data.len() < 16 {
-                //     todo!("This should cause an error as the packet header is 16 bytes minimum.")
-                // }
-
-                // first two octets is the packet type
-                let header_packet_type = &data[0..2];
-
-                // big-endian convert first two bytes to u16
-                let packet_type =
-                    (u16::from(header_packet_type[0]) << 8) | u16::from(header_packet_type[1]);
-
-                match packet_type {
-                    // 0 - unicast to us
-                    // 1 - broadcast by someone else
-                    // 2 - multicast, not broadcast, by someone else
-                    // 3 - unicast by someone else to someone else
-                    0_u16..=3_u16 => Direction::Receive,
-                    // 4 - sent by us
-                    // 4_u16 => Direction::Send,
-                    _ => Direction::Send, // TODO: This should probably cause an error as this is an invalid type.
-                }
-            })
-            .collect(),
-
-        // Reference: https://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL2.html
-        Linktype::LINUX_SLL2 => packets
-            .iter()
-            .map(|(_, data)| {
-                // if data.len() < 20 {
-                //     todo!("This should cause an error as the packet header is 20 bytes minimum.")
-                // }
-
-                // packet type is at 10th index
-                match &data[10] {
-                    // 0 - unicast to us
-                    // 1 - broadcast by someone else
-                    // 2 - multicast, not broadcast, by someone else
-                    // 3 - unicast by someone else to someone else
-                    0_u8..=3_u8 => Direction::Receive,
-                    // 4 - sent by us
-                    // 4_u8 => Direction::Send,
-                    _ => Direction::Send, // TODO: This should probably cause an error as this is an invalid type.
-                }
-            })
-            .collect(),
-
-        _ => unimplemented!(),
-    };
+    let directions: Box<[Direction]> = packets
+        .iter()
+        .map(|(_, data)| determine_packet_direction(data, linktype, mac_address))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_boxed_slice();
 
     let timing_deltas: Box<[u64]> = std::iter::once(0)
         .chain(
@@ -216,9 +213,25 @@ fn packets_to_trace(
                 .windows(2)
                 .map(|w| packet_ts_to_ms(w[1].0).saturating_sub(packet_ts_to_ms(w[0].0))),
         )
-        .collect();
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
 
-    let sizes: Box<[u32]> = packets.iter().map(|pkt| pkt.0.len).collect();
+    let sizes: Box<[u32]> = packets
+        .iter()
+        .map(|pkt| pkt.0.len)
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+
+    assert_eq!(
+        directions.len(),
+        timing_deltas.len(),
+        "Length of directions and timing deltas do not match after conversion of packet to trace."
+    );
+    assert_eq!(
+        sizes.len(),
+        timing_deltas.len(),
+        "Length of sizes and timing deltas do not match after conversion of packet to trace."
+    );
 
     Ok(Trace {
         directions,

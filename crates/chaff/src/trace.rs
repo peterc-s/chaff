@@ -1,5 +1,7 @@
 //! The different representations of traces and methods for working with traces.
 
+// TODO: Serialising to some standard format(s)?
+
 /// Packet direction.
 #[derive(Debug)]
 pub enum Direction {
