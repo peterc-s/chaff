@@ -444,4 +444,38 @@ mod tests {
         assert_eq!(trace.timing_deltas[0], 0);
         assert_eq!(trace.sizes[0], 144);
     }
+
+    #[test]
+    fn test_packets_to_trace_empty() {
+        let packets = [];
+        let linktype = Linktype::ETHERNET;
+        let local_mac = MacAddress::from([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe]);
+        let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
+        assert_eq!(trace.directions.len(), 0);
+    }
+
+    #[test]
+    fn test_packets_to_trace_unsupported_linktype() {
+        // Construct path to pcap
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-sll2-single-type-0.pcap");
+
+        // Create a capture from the file as dummy data
+        let mut cap = Capture::from_file(path).unwrap();
+
+        // Use an unsupported linktype
+        let linktype = Linktype::USER0;
+
+        // Fake mac
+        let local_mac = MacAddress::from([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe]);
+
+        let mut packets = Vec::new();
+        while let Ok(pkt) = cap.next_packet() {
+            packets.push((*pkt.header, pkt.data.to_vec()));
+        }
+
+        let trace = packets_to_trace(&packets, linktype, local_mac);
+
+        assert!(trace.is_err());
+    }
 }
