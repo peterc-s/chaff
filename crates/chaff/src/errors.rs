@@ -75,7 +75,7 @@ impl fmt::Display for CaptureError {
             Self::NoDevice => write!(f, "no capture device found."),
             Self::CaptureThreadPanic => write!(f, "capture thread panicked."),
             Self::InvalidPacket(msg) => write!(f, "invalid packet found: {msg}"),
-            Self::Pcap(inner) => write!(f, "pcap failure: {inner}"),
+            Self::Pcap(inner) => write!(f, "pcap error: {inner}"),
             Self::MacAddress(inner) => write!(f, "mac address lookup failed: {inner}"),
             Self::NoMac(device) => write!(f, "could not get mac address for device: {device}"),
         }
