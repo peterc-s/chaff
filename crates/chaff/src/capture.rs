@@ -12,11 +12,16 @@ use crate::{
 };
 
 /// Find an interface with the given `ifname`.
+// This isn't unit testable because it requires knowledge about the machine the test is running on.
+#[cfg(not(tarpaulin_include))]
 pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
     Ok(Device::list()?.into_iter().find(|dev| dev.name == *ifname))
 }
 
 /// Get the [`MacAddress`] of a [`Device`].
+// This isn't unit testable because it requires either spoofing or knowing the device name and MAC
+// address of said device.
+#[cfg(not(tarpaulin_include))]
 fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
     mac_address_by_name(&device.name)?.ok_or_else(|| CaptureError::NoMac(device.name.clone()))
 }
@@ -24,6 +29,9 @@ fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
 /// Activates the given `capture` for the given [`Duration`] and produces a [`crate::trace::Trace`].
 ///
 /// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
+// This isn't unit testable because libpcap requires specific capabilities (that would
+// require running as root or setting capabilities which requires root).
+#[cfg(not(tarpaulin_include))]
 pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
     let device = device.unwrap_or(Device::lookup()?.ok_or(CaptureError::NoDevice)?);
     let mac_address = get_device_mac(&device)?;

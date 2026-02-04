@@ -38,6 +38,9 @@ strip = "none"
 # Error on warning
 warnings = { level = "deny", priority = -1 }
 
+# Allow tarpaulin_include
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+
 # Basic good practices
 non_ascii_idents = "forbid"
 unsafe_code = "warn"

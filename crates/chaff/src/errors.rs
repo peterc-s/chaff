@@ -1,5 +1,8 @@
 //! Standard error definitions and [`std::fmt::Display`] immplementations.
 
+// These aren't testable.
+#![cfg(not(tarpaulin_include))]
+
 use std::{error::Error, fmt};
 
 macro_rules! impl_from {

@@ -1,6 +1,9 @@
 //! The command-line interface for interacting with the `chaff` anti website fingerprinting
 //! framework.
 
+// Not unit-testable
+#![cfg(not(tarpaulin_include))]
+
 use bpaf::Bpaf;
 use chaff::{
     capture::{capture_for, find_interface},

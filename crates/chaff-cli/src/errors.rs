@@ -1,5 +1,8 @@
 //! Error types for the Chaff CLI
 
+// Not unit testable.
+#![cfg(not(tarpaulin_include))]
+
 use std::{error::Error, fmt};
 
 use chaff::errors::ChaffError;
@@ -18,7 +21,15 @@ const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const RED: &str = "\x1b[31m";
 
-impl Error for CliError {}
+impl Error for CliError {
+    fn cause(&self) -> Option<&dyn Error> {
+        #[expect(clippy::match_wildcard_for_single_variants)]
+        match self {
+            Self::Library(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
