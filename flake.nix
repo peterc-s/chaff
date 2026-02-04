@@ -64,7 +64,13 @@
         };
 
         buildInputs = with pkgs; [libpcap];
-        extraShellInputs = with pkgs; [cargo-audit cargo-nextest cargo-machete cargo-tarpaulin];
+        extraShellInputs = with pkgs; [
+          cargo-audit
+          cargo-nextest
+          cargo-machete
+          cargo-tarpaulin
+          cargo-outdated
+        ];
       in {
         formatter = treefmtConfig.config.build.wrapper;
 
