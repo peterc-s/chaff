@@ -1,10 +1,12 @@
 //! The command-line interface for interacting with the `chaff` anti website fingerprinting
 //! framework.
 
-use std::{error::Error, fmt};
-
 use bpaf::Bpaf;
-use chaff::capture::{capture_for_ms, find_interface};
+use chaff::{
+    capture::{capture_for_ms, find_interface},
+    errors::{CaptureError, ChaffError},
+};
+use chaff_cli::errors::CliError;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -19,25 +21,16 @@ pub enum CliOptions {
     },
 }
 
-/// CLI errors
-#[derive(Debug)]
-pub enum CliError {
-    /// Device specified but not found.
-    DeviceNotFound(String),
-}
-
-impl Error for CliError {}
-
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::DeviceNotFound(name) => write!(f, "Device {name} specified but not found."),
-        }
+/// Wrapper around [`run()`] with error printing.
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("{e}");
+        std::process::exit(1);
     }
 }
 
-/// Dummy docs
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Run the chaff CLI.
+fn run() -> Result<(), CliError> {
     let cli_opts = cli_options().run();
 
     // Match for subcommands
@@ -46,20 +39,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let device = match ifname {
                 Some(name) => {
                     println!("Searching for device {name}...");
-                    find_interface(&name)?.map_or_else(
-                        || {
-                            println!("Device {name} not found.");
-                            Err(CliError::DeviceNotFound(name))
-                        },
-                        |device| {
-                            println!("Device found.");
-                            Ok(Some(device))
-                        },
-                    )
+                    find_interface(&name)
+                        .map_err(CaptureError::Pcap)
+                        .map_err(ChaffError::Capture)?
+                        .map_or_else(
+                            || {
+                                println!("Device {name} not found.");
+                                Err(CliError::DeviceNotFound(name))
+                            },
+                            |device| {
+                                println!("Device found.");
+                                Ok(Some(device))
+                            },
+                        )
                 }
                 None => Ok(None),
             }?;
-            let cap = capture_for_ms(std::time::Duration::from_secs(10), device)?;
+            let cap = capture_for_ms(std::time::Duration::from_secs(10), device)
+                .map_err(ChaffError::Capture)?;
             println!("Captured {} packets.", cap.directions.len());
         }
     }

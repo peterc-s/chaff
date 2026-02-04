@@ -1,65 +1,15 @@
 //! Use [libpcap](https://github.com/the-tcpdump-group/libpcap) through the [pcap] crate to capture
 //! a [`crate::trace::Trace`].
 
-use std::{error::Error, fmt, time::Duration};
+use std::time::Duration;
 
 use mac_address::{MacAddress, mac_address_by_name};
 use pcap::{Capture, Device, Linktype, PacketHeader};
 
-use crate::trace::{Direction, Trace};
-
-// TODO: see what other crates do about errors, should these be consolidated into a single
-// errors.rs?
-
-/// Capture error type.
-#[derive(Debug)]
-pub enum CaptureError {
-    /// When no suitable device is found.
-    NoDevice,
-
-    /// When the capture thread fails in some way.
-    CaptureThreadPanic,
-
-    /// A packet received or sent was found to be invalid while checking for packet directions.
-    InvalidPacket(String),
-
-    /// Wrapped errors from the [`pcap`] crate.
-    Pcap(pcap::Error),
-
-    /// Wrapped errors from the [`mac_address`] crate.
-    MacAddress(mac_address::MacAddressError),
-
-    /// Couldn't get MAC address for a device.
-    NoMac(String),
-}
-
-impl Error for CaptureError {}
-
-// TODO: Find out how to format error outputs properly, so no more "Error: Pcap(PcapError("Attempt to create packet socket failed - CAP_NET_RAW may be required"))"
-impl fmt::Display for CaptureError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::NoDevice => write!(f, "No capture device found."),
-            Self::CaptureThreadPanic => write!(f, "Capture thread panicked."),
-            Self::InvalidPacket(msg) => write!(f, "Invalid packet found: {msg}"),
-            Self::Pcap(inner) => write!(f, "Error from pcap: {inner}"),
-            Self::MacAddress(inner) => write!(f, "Error from mac_address: {inner}"),
-            Self::NoMac(device) => write!(f, "Couldn't get MAC address for device: {device}"),
-        }
-    }
-}
-
-impl From<pcap::Error> for CaptureError {
-    fn from(err: pcap::Error) -> Self {
-        Self::Pcap(err)
-    }
-}
-
-impl From<mac_address::MacAddressError> for CaptureError {
-    fn from(err: mac_address::MacAddressError) -> Self {
-        Self::MacAddress(err)
-    }
-}
+use crate::{
+    errors::CaptureError,
+    trace::{Direction, Trace},
+};
 
 /// Find an interface with the given `ifname`.
 pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
