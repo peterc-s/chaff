@@ -64,6 +64,7 @@
         };
 
         buildInputs = with pkgs; [libpcap];
+        extraShellInputs = with pkgs; [cargo-audit cargo-nextest cargo-machete];
       in {
         formatter = treefmtConfig.config.build.wrapper;
 
@@ -76,7 +77,7 @@
         devShells = {
           # Default development shell
           default = pkgs.mkShell {
-            inherit buildInputs;
+            buildInputs = buildInputs ++ extraShellInputs;
             nativeBuildInputs = [
               toolchain
             ];
@@ -85,7 +86,7 @@
 
           # MSRV development shell
           msrv = pkgs.mkShell {
-            inherit buildInputs;
+            buildInputs = buildInputs ++ extraShellInputs;
             nativeBuildInputs = [
               toolchainMsrv
             ];
