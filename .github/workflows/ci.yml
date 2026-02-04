@@ -8,7 +8,14 @@ on:
 jobs:
   build-and-check:
     name: Build and Check
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runs_on: ubuntu-latest
+          - arch: arm64
+            runs_on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs_on }}
     permissions:
       contents: read
     steps:
