@@ -1,10 +1,10 @@
 //! Test using pcap
 
-use chaff::capture::capture_for_ms;
+use chaff::capture::capture_for;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting capture");
-    let trace = capture_for_ms(std::time::Duration::from_secs(10), None)?;
+    let trace = capture_for(std::time::Duration::from_secs(10), None)?;
     println!("Got {} packets.", trace.directions.len());
 
     if !trace.directions.is_empty() {

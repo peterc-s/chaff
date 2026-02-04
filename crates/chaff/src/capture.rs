@@ -21,10 +21,10 @@ fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
     mac_address_by_name(&device.name)?.ok_or_else(|| CaptureError::NoMac(device.name.clone()))
 }
 
-/// Activates the given `capture` for `ms` milliseconds and produces a [`crate::trace::Trace`].
+/// Activates the given `capture` for the given [`Duration`] and produces a [`crate::trace::Trace`].
 ///
 /// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
-pub fn capture_for_ms(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
+pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
     let device = device.unwrap_or(Device::lookup()?.ok_or(CaptureError::NoDevice)?);
     let mac_address = get_device_mac(&device)?;
 

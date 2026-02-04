@@ -3,7 +3,7 @@
 
 use bpaf::Bpaf;
 use chaff::{
-    capture::{capture_for_ms, find_interface},
+    capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
 };
 use chaff_cli::errors::CliError;
@@ -55,7 +55,7 @@ fn run() -> Result<(), CliError> {
                 }
                 None => Ok(None),
             }?;
-            let cap = capture_for_ms(std::time::Duration::from_secs(10), device)
+            let cap = capture_for(std::time::Duration::from_secs(10), device)
                 .map_err(ChaffError::Capture)?;
             println!("Captured {} packets.", cap.directions.len());
         }
