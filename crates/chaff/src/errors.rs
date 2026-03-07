@@ -124,15 +124,15 @@ impl fmt::Display for TraceError {
                 f,
                 "mis-matched trace field lengths. directions: {directions}, timing_deltas: {timing_deltas}, sizes: {sizes}."
             ),
-            TraceError::Io(error) => write!(f, "io error: {error}"),
-            TraceError::InvalidMagic(magic) => {
+            Self::Io(error) => write!(f, "io error: {error}"),
+            Self::InvalidMagic(magic) => {
                 write!(f, "invalid trace file magic bytes: {magic:?}")
             }
-            TraceError::InvalidVersion(version) => {
+            Self::InvalidVersion(version) => {
                 write!(f, "invalid trace file version: {version:?}")
             }
-            TraceError::UnexpectedEof => write!(f, "trace file ended unexpectedly."),
-            TraceError::InvalidDirection(direction) => {
+            Self::UnexpectedEof => write!(f, "trace file ended unexpectedly."),
+            Self::InvalidDirection(direction) => {
                 write!(f, "invalid direction in trace file: {direction}")
             }
         }

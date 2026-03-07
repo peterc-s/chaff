@@ -161,7 +161,7 @@ impl Trace {
         let timing_deltas = (0..len)
             .map(|_| {
                 let mut b = [0u8; 8];
-                read(&mut b).map(|_| u64::from_le_bytes(b))
+                read(&mut b).map(|()| u64::from_le_bytes(b))
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
@@ -170,7 +170,7 @@ impl Trace {
         let sizes = (0..len)
             .map(|_| {
                 let mut b = [0u8; 4];
-                read(&mut b).map(|_| u32::from_le_bytes(b))
+                read(&mut b).map(|()| u32::from_le_bytes(b))
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
