@@ -2,9 +2,13 @@
   description = "Anti Website Fingerprinting Library";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
     flake-utils.url = "github:numtide/flake-utils";
-    treefmt.url = "github:numtide/treefmt-nix";
+
+    treefmt = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     naersk = {
       url = "github:nix-community/naersk";
