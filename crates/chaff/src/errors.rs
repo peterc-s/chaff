@@ -20,12 +20,16 @@ macro_rules! impl_from {
 pub enum ChaffError {
     /// Errors from [`crate::capture`].
     Capture(CaptureError),
+
+    /// Errors from [`crate::trace`]
+    Trace(TraceError),
 }
 
 impl Error for ChaffError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Capture(e) => Some(e),
+            Self::Trace(e) => Some(e),
         }
     }
 }
@@ -34,6 +38,7 @@ impl fmt::Display for ChaffError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Capture(e) => write!(f, "capture error: {e}"),
+            Self::Trace(e) => write!(f, "trace error: {e}"),
         }
     }
 }
@@ -87,3 +92,23 @@ impl fmt::Display for CaptureError {
 
 impl_from!(pcap::Error, CaptureError, Self::Pcap);
 impl_from!(mac_address::MacAddressError, CaptureError, Self::MacAddress);
+
+/// Trace error type for the [`crate::trace`] module.
+#[derive(Debug, Clone)]
+pub enum TraceError {
+    /// When a [`crate::trace::Trace`]'s fields have mis-matched lengths.
+    LengthMismatch(usize, usize, usize),
+}
+
+impl Error for TraceError {}
+
+impl fmt::Display for TraceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthMismatch(directions, timing_deltas, sizes) => write!(
+                f,
+                "mis-matched trace field lengths. directions: {directions}, timing_deltas: {timing_deltas}, sizes: {sizes}."
+            ),
+        }
+    }
+}
