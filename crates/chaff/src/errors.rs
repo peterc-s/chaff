@@ -1,9 +1,9 @@
-//! Standard error definitions and [`std::fmt::Display`] immplementations.
+//! Standard error definitions and [`std::fmt::Display`] implementations.
 
 // These aren't testable.
 #![cfg(not(tarpaulin_include))]
 
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, io};
 
 macro_rules! impl_from {
     ($from:ty, $to:ty, $variant:expr) => {
@@ -94,10 +94,25 @@ impl_from!(pcap::Error, CaptureError, Self::Pcap);
 impl_from!(mac_address::MacAddressError, CaptureError, Self::MacAddress);
 
 /// Trace error type for the [`crate::trace`] module.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum TraceError {
     /// When a [`crate::trace::Trace`]'s fields have mis-matched lengths.
     LengthMismatch(usize, usize, usize),
+
+    /// An I/O error when serialising or deserialising.
+    Io(io::Error),
+
+    /// Deserialised trace file has invalid magic bytes.
+    InvalidMagic(Box<[u8]>),
+
+    /// Deserialised trace file has invalid version.
+    InvalidVersion(Box<[u8]>),
+
+    /// Deserialised trace file ended unexpectedly.
+    UnexpectedEof,
+
+    /// Deserialised trace contains invalid direction.
+    InvalidDirection(u8),
 }
 
 impl Error for TraceError {}
@@ -109,6 +124,17 @@ impl fmt::Display for TraceError {
                 f,
                 "mis-matched trace field lengths. directions: {directions}, timing_deltas: {timing_deltas}, sizes: {sizes}."
             ),
+            TraceError::Io(error) => write!(f, "io error: {error}"),
+            TraceError::InvalidMagic(magic) => {
+                write!(f, "invalid trace file magic bytes: {magic:?}")
+            }
+            TraceError::InvalidVersion(version) => {
+                write!(f, "invalid trace file version: {version:?}")
+            }
+            TraceError::UnexpectedEof => write!(f, "trace file ended unexpectedly."),
+            TraceError::InvalidDirection(direction) => {
+                write!(f, "invalid direction in trace file: {direction}")
+            }
         }
     }
 }
