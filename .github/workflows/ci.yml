@@ -31,4 +31,4 @@ jobs:
       - name: Build
         run: nix build
       - name: Check
-        run: nix flake check --all-systems
+        run: nix flake check

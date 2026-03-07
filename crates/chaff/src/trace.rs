@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialise_round_trip() {
+    fn test_serde_round_trip() {
         // create dummy trace
         let trace = Trace {
             directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
@@ -246,7 +246,7 @@ mod tests {
         };
 
         // save to a temporary file
-        let path = temp_file("test_serialise_round_trip.bin");
+        let path = temp_file("test_serde_round_trip.bin");
         trace.serialise(&path).unwrap();
 
         // check trace is the same
