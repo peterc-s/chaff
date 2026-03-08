@@ -44,6 +44,7 @@ impl fmt::Display for ChaffError {
 }
 
 impl_from!(CaptureError, ChaffError, ChaffError::Capture);
+impl_from!(TraceError, ChaffError, ChaffError::Trace);
 
 /// Capture error type for the [`crate::capture`] module.
 #[derive(Debug)]
@@ -138,3 +139,5 @@ impl fmt::Display for TraceError {
         }
     }
 }
+
+impl_from!(io::Error, TraceError, Self::Io);

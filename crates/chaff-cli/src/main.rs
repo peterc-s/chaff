@@ -4,6 +4,8 @@
 // Not unit-testable
 #![cfg(not(tarpaulin_include))]
 
+use std::path::PathBuf;
+
 use bpaf::Bpaf;
 use chaff::{
     capture::{capture_for, find_interface},
@@ -18,6 +20,10 @@ pub enum CliOptions {
     #[bpaf(command("capture"))]
     /// Capture a traffic trace
     Capture {
+        /// Path to output file.
+        #[bpaf(short, long)]
+        output: Option<PathBuf>,
+
         /// Name of the interface to use
         #[bpaf(short, long)]
         ifname: Option<String>,
@@ -38,7 +44,7 @@ fn run() -> Result<(), CliError> {
 
     // Match for subcommands
     match cli_opts {
-        CliOptions::Capture { ifname } => {
+        CliOptions::Capture { output, ifname } => {
             let device = match ifname {
                 Some(name) => {
                     println!("Searching for device {name}...");
@@ -61,6 +67,11 @@ fn run() -> Result<(), CliError> {
             let cap = capture_for(std::time::Duration::from_secs(10), device)
                 .map_err(ChaffError::Capture)?;
             println!("Captured {} packets.", cap.directions.len());
+
+            if let Some(path) = output {
+                cap.serialise(&path)?;
+                println!("Saved to {}", path.display());
+            }
         }
     }
 

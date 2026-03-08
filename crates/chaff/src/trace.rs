@@ -1,16 +1,12 @@
 //! The different representations of traces and methods for working with traces.
 
-#![allow(dead_code)]
-// TODO: Serialising to some standard format(s)?
-
 use std::{
-    error::Error,
     fs::{self, OpenOptions},
     io::{Cursor, Read as _, Write as _},
     path::Path,
 };
 
-use crate::errors::TraceError;
+use crate::errors::{ChaffError, TraceError};
 
 /// Packet direction.
 #[derive(Debug, PartialEq, Eq)]
@@ -40,17 +36,13 @@ const TRACE_MAGIC: &[u8; 5] = b"CHAFF";
 const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
 
 impl Trace {
-    fn len_check(&self) -> Result<(), TraceError> {
+    fn len_check(&self) -> Result<(), ChaffError> {
         let directions_len = self.directions.len();
         let timing_deltas_len = self.timing_deltas.len();
         let sizes_len = self.sizes.len();
 
         if directions_len != timing_deltas_len || timing_deltas_len != sizes_len {
-            Err(TraceError::LengthMismatch(
-                directions_len,
-                timing_deltas_len,
-                sizes_len,
-            ))
+            Err(TraceError::LengthMismatch(directions_len, timing_deltas_len, sizes_len).into())
         } else {
             Ok(())
         }
@@ -67,7 +59,7 @@ impl Trace {
     /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`]
     /// - [`Trace::timing_deltas`]
     /// - [`Trace::sizes`]
-    pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), Box<dyn Error>> {
+    pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
         // Length-sensitive operation, should check field lengths are the same
         // before.
         self.len_check()?;
@@ -99,20 +91,27 @@ impl Trace {
             buf.extend_from_slice(&size.to_le_bytes());
         }
 
-        let mut out = OpenOptions::new()
+        let mut out = match OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
-            .open(to)?;
+            .open(to)
+        {
+            Ok(f) => f,
+            Err(e) => Err(TraceError::Io(e))?, // TODO: better way to do this
+        };
 
-        out.write_all(&buf)?;
+        match out.write_all(&buf) {
+            Ok(()) => {}
+            Err(e) => Err(TraceError::Io(e))?,
+        }
 
         Ok(())
     }
 
     /// Deserialise a trace from a binary-format file, see [`Trace::serialise()`] for more
     /// information on the format.
-    pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, TraceError> {
+    pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, ChaffError> {
         // read file
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
@@ -130,13 +129,13 @@ impl Trace {
         let mut magic = [0u8; 5];
         read(&mut magic)?;
         if magic != *TRACE_MAGIC {
-            return Err(TraceError::InvalidMagic(magic.into()));
+            return Err(TraceError::InvalidMagic(magic.into()).into());
         }
 
         let mut version = [0u8; 3];
         read(&mut version)?;
         if version != *TRACE_VERSION {
-            return Err(TraceError::InvalidVersion(version.into()));
+            return Err(TraceError::InvalidVersion(version.into()).into());
         }
 
         // read length
