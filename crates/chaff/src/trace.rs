@@ -91,20 +91,14 @@ impl Trace {
             buf.extend_from_slice(&size.to_le_bytes());
         }
 
-        let mut out = match OpenOptions::new()
+        let mut out = OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
             .open(to)
-        {
-            Ok(f) => f,
-            Err(e) => Err(TraceError::Io(e))?, // TODO: better way to do this
-        };
+            .map_err(TraceError::Io)?;
 
-        match out.write_all(&buf) {
-            Ok(()) => {}
-            Err(e) => Err(TraceError::Io(e))?,
-        }
+        out.write_all(&buf).map_err(TraceError::Io)?;
 
         Ok(())
     }
