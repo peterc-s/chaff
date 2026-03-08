@@ -59,7 +59,7 @@ impl Trace {
     ///
     /// Then, the [`Trace`] fields are written one after the other in the following order:
     /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`], packed
-    /// into a bitvector
+    ///   into a bitvector
     /// - [`Trace::timing_deltas`]
     /// - [`Trace::sizes`]
     pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
