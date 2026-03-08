@@ -59,9 +59,11 @@ impl Trace {
     ///
     /// Then, the [`Trace`] fields are written one after the other in the following order:
     /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`], packed
-    ///   into a bitvector
+    ///   LSB-first into a bitvector so packet `i` occupies bit `i % 8` of byte `i / 8`.
     /// - [`Trace::timing_deltas`]
     /// - [`Trace::sizes`]
+    ///
+    /// All fields are encoded little-endian
     pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
         // Length-sensitive operation, should check field lengths are the same
         // before.
@@ -176,13 +178,19 @@ impl Trace {
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
 
-        // tarpaulin can't seem to figure out this is covered by the round trip test.
-        #[cfg(not(tarpaulin_include))]
-        Ok(Self {
+        let result = Self {
             directions,
             timing_deltas,
             sizes,
-        })
+        };
+
+        // an io::Error _should_ have happened if lengths were wrong, this ensures lengths are
+        // correct.
+        result.len_check()?;
+
+        // tarpaulin can't seem to figure out this is covered by the round trip test.
+        #[cfg(not(tarpaulin_include))]
+        Ok(result)
     }
 }
 

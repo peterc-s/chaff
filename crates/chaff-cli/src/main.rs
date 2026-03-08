@@ -10,6 +10,7 @@ use bpaf::Bpaf;
 use chaff::{
     capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
+    trace::Trace,
 };
 use chaff_cli::errors::CliError;
 
@@ -18,7 +19,7 @@ use chaff_cli::errors::CliError;
 #[bpaf(options, version)]
 pub enum CliOptions {
     #[bpaf(command("capture"))]
-    /// Capture a traffic trace
+    /// Capture a traffic trace.
     Capture {
         /// Path to output file.
         #[bpaf(short, long)]
@@ -27,6 +28,14 @@ pub enum CliOptions {
         /// Name of the interface to use
         #[bpaf(short, long)]
         ifname: Option<String>,
+    },
+
+    #[bpaf(command("trace-stats"))]
+    /// Get statistics about a trace.
+    TraceStats {
+        /// Path to trace file.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
     },
 }
 
@@ -72,6 +81,10 @@ fn run() -> Result<(), CliError> {
                 cap.serialise(&path)?;
                 println!("Saved to {}", path.display());
             }
+        }
+        CliOptions::TraceStats { input } => {
+            let trace = Trace::deserialise(&input)?;
+            println!("Packets: {}", trace.directions.len());
         }
     }
 
