@@ -58,7 +58,8 @@ impl Trace {
     /// - bytes 8-12: trace length (u32)
     ///
     /// Then, the [`Trace`] fields are written one after the other in the following order:
-    /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`]
+    /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`], packed
+    /// into a bitvector
     /// - [`Trace::timing_deltas`]
     /// - [`Trace::sizes`]
     pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
@@ -80,12 +81,14 @@ impl Trace {
         #[expect(clippy::cast_possible_truncation)]
         buf.extend(&(trace_len as u32).to_le_bytes());
 
-        // tarpaulin can't seem to figure out this is covered by the round trip test.
-        #[cfg(not(tarpaulin_include))]
-        buf.extend(self.directions.iter().map(|d| match d {
-            Direction::Send => 0u8,
-            Direction::Receive => 1u8,
-        }));
+        // pack directions into a bitvector
+        let mut packed_dirs = vec![0u8; trace_len.div_ceil(8)];
+        for (i, dir) in self.directions.iter().enumerate() {
+            if matches!(dir, Direction::Receive) {
+                packed_dirs[i / 8] |= 1 << (i % 8);
+            }
+        }
+        buf.extend(packed_dirs);
 
         for delta in &self.timing_deltas {
             buf.extend_from_slice(&delta.to_le_bytes());
@@ -138,19 +141,24 @@ impl Trace {
         let len = u32::from_le_bytes(len_buf) as usize;
 
         // read directions
-        let mut dir_buf = vec![0u8; len];
+        let mut dir_buf = vec![0u8; len.div_ceil(8)];
         read(&mut dir_buf)?;
-        let directions = dir_buf
-            .iter()
-            .map(|&b| match b {
-                0 => Ok(Direction::Send),
-                1 => Ok(Direction::Receive),
-                n => Err(TraceError::InvalidDirection(n)),
+
+        // can't test unreachable...
+        #[cfg(not(tarpaulin_include))]
+        let directions = (0..len)
+            .map(|i| {
+                let bit = (dir_buf[i / 8] >> (i % 8)) & 1;
+                match bit {
+                    0 => Direction::Send,
+                    1 => Direction::Receive,
+                    _ => unreachable!(),
+                }
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Vec<Direction>>()
             .into_boxed_slice();
 
-        // Read timing deltas
+        // read timing deltas
         let timing_deltas = (0..len)
             .map(|_| {
                 let mut b = [0u8; 4];
@@ -159,7 +167,7 @@ impl Trace {
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
 
-        // Read sizes
+        // read sizes
         let sizes = (0..len)
             .map(|_| {
                 let mut b = [0u8; 4];
@@ -212,9 +220,9 @@ mod tests {
 
         // check data
         // directions
-        assert_eq!(&bytes[12..15], &[0, 1, 0]);
+        assert_eq!(&bytes[12], &0b0000_0010u8);
 
-        let mut off = 15;
+        let mut off = 13;
         let inc = size_of::<u32>();
 
         // timing deltas
@@ -251,31 +259,6 @@ mod tests {
         // check for specific error
         match result {
             Err(ChaffError::Trace(TraceError::LengthMismatch(3, 3, 2))) => {}
-            other => panic!("unexpected result: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_deserialise_invalid_direction() {
-        let mut bytes = Vec::new();
-
-        bytes.extend_from_slice(TRACE_MAGIC);
-        bytes.extend_from_slice(TRACE_VERSION);
-        bytes.extend_from_slice(&(1u32.to_le_bytes()));
-
-        bytes.push(2); // invalid direction
-
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // size
-
-        let file = temp_file("test_deserialise_invalid_direction.bin");
-        fs::write(&file, bytes).unwrap();
-
-        let result = Trace::deserialise(&file);
-
-        // check for specific error
-        match result {
-            Err(ChaffError::Trace(TraceError::InvalidDirection(2))) => {}
             other => panic!("unexpected result: {other:?}"),
         }
     }
@@ -319,7 +302,7 @@ mod tests {
         bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
         bytes.extend_from_slice(&0u32.to_le_bytes()); // size
 
-        let file = temp_file("test_deserialise_invalid_magic.bin");
+        let file = temp_file("test_deserialise_invalid_version.bin");
         fs::write(&file, bytes).unwrap();
 
         let result = Trace::deserialise(&file);

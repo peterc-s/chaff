@@ -111,9 +111,6 @@ pub enum TraceError {
 
     /// Deserialised trace file ended unexpectedly.
     UnexpectedEof,
-
-    /// Deserialised trace contains invalid direction.
-    InvalidDirection(u8),
 }
 
 impl Error for TraceError {}
@@ -133,9 +130,6 @@ impl fmt::Display for TraceError {
                 write!(f, "invalid trace file version: {version:?}")
             }
             Self::UnexpectedEof => write!(f, "trace file ended unexpectedly."),
-            Self::InvalidDirection(direction) => {
-                write!(f, "invalid direction in trace file: {direction}")
-            }
         }
     }
 }
