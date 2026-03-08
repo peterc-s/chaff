@@ -80,6 +80,8 @@ impl Trace {
         #[expect(clippy::cast_possible_truncation)]
         buf.extend(&(trace_len as u32).to_le_bytes());
 
+        // tarpaulin can't seem to figure out this is covered by the round trip test.
+        #[cfg(not(tarpaulin_include))]
         buf.extend(self.directions.iter().map(|d| match d {
             Direction::Send => 0u8,
             Direction::Receive => 1u8,
@@ -109,11 +111,7 @@ impl Trace {
     /// information on the format.
     pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, ChaffError> {
         // read file
-        let bytes = match fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(e) => Err(TraceError::Io(e))?, // TODO: better way to do this
-        };
-
+        let bytes = fs::read(path).map_err(TraceError::Io)?;
         let mut cursor = Cursor::new(&bytes);
         let mut read = |buf: &mut [u8]| -> Result<(), TraceError> {
             cursor
@@ -170,6 +168,8 @@ impl Trace {
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
 
+        // tarpaulin can't seem to figure out this is covered by the round trip test.
+        #[cfg(not(tarpaulin_include))]
         Ok(Self {
             directions,
             timing_deltas,
@@ -233,6 +233,104 @@ mod tests {
 
         // check total size
         assert_eq!(bytes.len(), off);
+    }
+
+    #[test]
+    fn test_serialise_length_mismatch() {
+        // create dummy trace
+        let trace = Trace {
+            directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
+            timing_deltas: Box::new([10, 20, 30]),
+            sizes: Box::new([100, 200]),
+        };
+
+        let path = temp_file("test_serialise_length_mismatch.bin");
+
+        let result = trace.serialise(&path);
+
+        // check for specific error
+        match result {
+            Err(ChaffError::Trace(TraceError::LengthMismatch(3, 3, 2))) => {}
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_deserialise_invalid_direction() {
+        let mut bytes = Vec::new();
+
+        bytes.extend_from_slice(TRACE_MAGIC);
+        bytes.extend_from_slice(TRACE_VERSION);
+        bytes.extend_from_slice(&(1u32.to_le_bytes()));
+
+        bytes.push(2); // invalid direction
+
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // size
+
+        let file = temp_file("test_deserialise_invalid_direction.bin");
+        fs::write(&file, bytes).unwrap();
+
+        let result = Trace::deserialise(&file);
+
+        // check for specific error
+        match result {
+            Err(ChaffError::Trace(TraceError::InvalidDirection(2))) => {}
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_deserialise_invalid_magic() {
+        let mut bytes = Vec::new();
+
+        bytes.extend_from_slice(b"WRONG");
+        bytes.extend_from_slice(TRACE_VERSION);
+        bytes.extend_from_slice(&(1u32.to_le_bytes())); // len = 1
+
+        bytes.push(0u8);
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // size
+
+        let file = temp_file("test_deserialise_invalid_magic.bin");
+        fs::write(&file, bytes).unwrap();
+
+        let result = Trace::deserialise(&file);
+
+        // check for specific error
+        match result {
+            Err(ChaffError::Trace(TraceError::InvalidMagic(found))) => {
+                let found: [u8; 5] = found[0..5].try_into().unwrap();
+                assert_eq!(&found, b"WRONG");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_deserialise_invalid_version() {
+        let mut bytes = Vec::new();
+
+        bytes.extend_from_slice(TRACE_MAGIC);
+        bytes.extend_from_slice(&[255u8, 255u8, 255u8]);
+        bytes.extend_from_slice(&(1u32.to_le_bytes())); // len = 1
+
+        bytes.push(0u8);
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // size
+
+        let file = temp_file("test_deserialise_invalid_magic.bin");
+        fs::write(&file, bytes).unwrap();
+
+        let result = Trace::deserialise(&file);
+
+        // check for specific error
+        match result {
+            Err(ChaffError::Trace(TraceError::InvalidVersion(found))) => {
+                assert_eq!(*found, [255u8, 255u8, 255u8]);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
