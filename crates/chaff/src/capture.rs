@@ -174,11 +174,13 @@ fn packets_to_trace(
         .collect::<Result<Vec<_>, _>>()?
         .into_boxed_slice();
 
-    let timing_deltas: Box<[u64]> = std::iter::once(0)
+    // Don't expect the time difference between two packets to be this large.
+    #[expect(clippy::cast_possible_truncation)]
+    let timing_deltas: Box<[u32]> = std::iter::once(0)
         .chain(
             packets
                 .windows(2)
-                .map(|w| packet_ts_to_ms(w[1].0).saturating_sub(packet_ts_to_ms(w[0].0))),
+                .map(|w| packet_ts_to_ms(w[1].0).saturating_sub(packet_ts_to_ms(w[0].0)) as u32),
         )
         .collect::<Vec<_>>()
         .into_boxed_slice();

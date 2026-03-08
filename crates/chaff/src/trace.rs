@@ -19,23 +19,25 @@ pub enum Direction {
 }
 
 /// Represents a trace explicitly with packet [Direction]s, packet timing deltas, and sizes
-/// (assumes non-fixed transmission unit size). Fixed-size.
+/// (assumes non-fixed transmission unit size). Fixed-size, field lengths should match.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Trace {
     /// The direction in which a packet was send.
     pub directions: Box<[Direction]>,
 
     /// How long between last packet and this one.
-    pub timing_deltas: Box<[u64]>,
+    pub timing_deltas: Box<[u32]>,
 
     /// Assuming largest MTU is 4GiB (IPv6 jumbograms, for example).
     pub sizes: Box<[u32]>,
 }
 
+/// Trace binary header information.
 const TRACE_MAGIC: &[u8; 5] = b"CHAFF";
 const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
 
 impl Trace {
+    /// Should be used before a size-sensitive operation. Errors if lengths mismatch.
     fn len_check(&self) -> Result<(), ChaffError> {
         let directions_len = self.directions.len();
         let timing_deltas_len = self.timing_deltas.len();
@@ -153,8 +155,8 @@ impl Trace {
         // Read timing deltas
         let timing_deltas = (0..len)
             .map(|_| {
-                let mut b = [0u8; 8];
-                read(&mut b).map(|()| u64::from_le_bytes(b))
+                let mut b = [0u8; 4];
+                read(&mut b).map(|()| u32::from_le_bytes(b))
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
@@ -212,21 +214,25 @@ mod tests {
         // directions
         assert_eq!(&bytes[12..15], &[0, 1, 0]);
 
+        let mut off = 15;
+        let inc = size_of::<u32>();
+
         // timing deltas
-        let delta_0 = u64::from_le_bytes(bytes[15..23].try_into().unwrap());
-        let delta_1 = u64::from_le_bytes(bytes[23..31].try_into().unwrap());
-        let delta_2 = u64::from_le_bytes(bytes[31..39].try_into().unwrap());
-        assert_eq!(delta_0, trace.timing_deltas[0]);
-        assert_eq!(delta_1, trace.timing_deltas[1]);
-        assert_eq!(delta_2, trace.timing_deltas[2]);
+        for delta in &trace.timing_deltas {
+            let read_delta = u32::from_le_bytes(bytes[off..off + inc].try_into().unwrap());
+            off += inc;
+            assert_eq!(read_delta, *delta);
+        }
 
         // sizes
-        let size_0 = u32::from_le_bytes(bytes[39..43].try_into().unwrap());
-        let size_1 = u32::from_le_bytes(bytes[43..47].try_into().unwrap());
-        let size_2 = u32::from_le_bytes(bytes[47..51].try_into().unwrap());
-        assert_eq!(size_0, trace.sizes[0]);
-        assert_eq!(size_1, trace.sizes[1]);
-        assert_eq!(size_2, trace.sizes[2]);
+        for size in &trace.sizes {
+            let read_size = u32::from_le_bytes(bytes[off..off + inc].try_into().unwrap());
+            off += inc;
+            assert_eq!(read_size, *size);
+        }
+
+        // check total size
+        assert_eq!(bytes.len(), off);
     }
 
     #[test]
