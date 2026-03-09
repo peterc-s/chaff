@@ -13,3 +13,9 @@ impl Simulator {
         trace
     }
 }
+
+impl From<Framework> for Simulator {
+    fn from(value: Framework) -> Self {
+        Self { framework: value }
+    }
+}

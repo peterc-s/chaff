@@ -10,9 +10,11 @@ use bpaf::Bpaf;
 use chaff::{
     capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
+    framework::Framework,
     trace::{Direction, Trace},
 };
 use chaff_cli::errors::CliError;
+use chaff_machines::test::construct_test_machine;
 use chaff_sim::Simulator;
 
 /// Command-line interface options
@@ -92,7 +94,9 @@ fn run() -> Result<(), CliError> {
             println!("Packets: {}", trace.directions.len());
         }
         CliOptions::Simulate => {
-            let sim = Simulator::default();
+            let machine = construct_test_machine();
+            let framework = Framework::new(machine);
+            let sim: Simulator = framework.into();
             let trace = Trace {
                 directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
                 timing_deltas: Box::new([10, 20, 30]),

@@ -85,7 +85,15 @@ version = "0.1.0"
 dependencies = [
  "bpaf",
  "chaff",
+ "chaff-machines",
  "chaff-sim",
+]
+
+[[package]]
+name = "chaff-machines"
+version = "0.1.0"
+dependencies = [
+ "chaff",
 ]
 
 [[package]]

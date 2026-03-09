@@ -1,6 +1,6 @@
 [package]
-name = "chaff-cli"
-description = "Command line for Chaff - a library for implementing Website Fingerprinting defences."
+name = "chaff-machines"
+description = "Example Machines in the Chaff Framework"
 version = "0.1.0"
 readme = "README.md"
 edition.workspace = true
@@ -18,7 +18,4 @@ default = []
 
 [dependencies]
 chaff = { version = "0.1.0", path = "../chaff/" }
-chaff-sim = { version = "0.1.0", path = "../chaff-sim/" }
-chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 
-bpaf = { version = "0.9.22", features = ["derive"] }
