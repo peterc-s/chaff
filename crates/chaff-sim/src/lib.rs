@@ -11,6 +11,7 @@ pub struct Simulator<R: Rng> {
 
 impl<R: Rng> Simulator<R> {
     pub fn run(&self, trace: Trace) -> Trace {
+        // TODO: actually do a simulation.
         trace
     }
 }

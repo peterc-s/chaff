@@ -23,11 +23,15 @@ impl<R: Rng> Framework<R> {
         }
     }
 
+    fn get_trans_probs(&self) -> Option<TransitionProbs> {
+        self.machine.states[self.runtime.state].trans_probs
+    }
+
     pub fn trigger_events(&mut self, events: &[Event]) -> Box<[Action]> {
         let mut resulting_actions = vec![];
 
         for event in events {
-            if let Some(trans_probs) = self.machine.states[self.runtime.state].trans_probs {
+            if let Some(trans_probs) = self.get_trans_probs() {
                 if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
                     self.runtime.state = new_state;
                     resulting_actions.push(self.machine.states[new_state].action);
@@ -72,10 +76,19 @@ impl State {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Transition(
-    pub usize, // Index of state to transition to.
-    pub f32,   // Probability of transition.
-);
+pub struct Transition {
+    pub index: usize, // Index of state to transition to.
+    pub prob: f32,    // Probability of transition.
+}
+
+impl From<(usize, f32)> for Transition {
+    fn from(value: (usize, f32)) -> Self {
+        Self {
+            index: value.0,
+            prob: value.1,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionProbs(pub [Option<Transition>; Event::COUNT]);
@@ -98,8 +111,8 @@ impl TransitionProbs {
 
     pub fn trigger(&self, rng: &mut impl Rng, event: Event) -> Option<usize> {
         self[event].and_then(|trans| {
-            if trans.1 < rng.random() {
-                Some(trans.0)
+            if trans.prob < rng.random() {
+                Some(trans.index)
             } else {
                 None
             }
