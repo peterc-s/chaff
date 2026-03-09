@@ -2,20 +2,21 @@
 #![expect(missing_docs)]
 
 use chaff::{framework::Framework, trace::Trace};
+use rand::Rng;
 
 #[derive(Default)]
-pub struct Simulator {
-    framework: Framework,
+pub struct Simulator<R: Rng> {
+    framework: Framework<R>,
 }
 
-impl Simulator {
+impl<R: Rng> Simulator<R> {
     pub fn run(&self, trace: Trace) -> Trace {
         trace
     }
 }
 
-impl From<Framework> for Simulator {
-    fn from(value: Framework) -> Self {
+impl<R: Rng> From<Framework<R>> for Simulator<R> {
+    fn from(value: Framework<R>) -> Self {
         Self { framework: value }
     }
 }

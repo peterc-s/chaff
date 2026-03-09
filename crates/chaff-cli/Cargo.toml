@@ -22,3 +22,4 @@ chaff-sim = { version = "0.1.0", path = "../chaff-sim/" }
 chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 
 bpaf = { version = "0.9.22", features = ["derive"] }
+rand = "0.9.2"

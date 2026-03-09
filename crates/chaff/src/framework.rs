@@ -1,31 +1,45 @@
 //! The Chaff framework.
 // TODO: document
 
-#![expect(dead_code)]
 #![expect(missing_docs)]
 
 use std::ops::{Index, IndexMut};
 
-#[derive(Default)]
-pub struct Framework {
+use rand::Rng;
+
+#[derive(Default, Clone)]
+pub struct Framework<R: Rng> {
     machine: Machine,
     runtime: MachineRuntime,
+    rng: R,
 }
 
-impl Framework {
-    pub fn new(machine: Machine) -> Self {
+impl<R: Rng> Framework<R> {
+    pub fn new(machine: Machine, rng: R) -> Self {
         Self {
             machine,
             runtime: MachineRuntime::default(),
+            rng,
         }
     }
 
-    pub fn trigger_events(&self, _events: &[Event]) -> Box<[Action]> {
-        todo!()
+    pub fn trigger_events(&mut self, events: &[Event]) -> Box<[Action]> {
+        let mut resulting_actions = vec![];
+
+        for event in events {
+            if let Some(trans_probs) = self.machine.states[self.runtime.state].trans_probs {
+                if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
+                    self.runtime.state = new_state;
+                    resulting_actions.push(self.machine.states[new_state].action);
+                }
+            }
+        }
+
+        resulting_actions.into_boxed_slice()
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Machine {
     states: Vec<State>,
 }
@@ -36,13 +50,13 @@ impl Machine {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct MachineRuntime {
     /// Index into the [`Machine::states`] array.
     state: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct State {
     pub(crate) trans_probs: Option<TransitionProbs>,
     pub(crate) action: Action,
@@ -63,6 +77,7 @@ pub struct Transition(
     pub f32,   // Probability of transition.
 );
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionProbs(pub [Option<Transition>; Event::COUNT]);
 
 impl TransitionProbs {
@@ -80,6 +95,16 @@ impl TransitionProbs {
         }
         probs
     }
+
+    pub fn trigger(&self, rng: &mut impl Rng, event: Event) -> Option<usize> {
+        self[event].and_then(|trans| {
+            if trans.1 < rng.random() {
+                Some(trans.0)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl Index<Event> for TransitionProbs {
@@ -96,7 +121,7 @@ impl IndexMut<Event> for TransitionProbs {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Action {
     #[default]
     SendDecoy,

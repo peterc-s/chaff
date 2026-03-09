@@ -95,8 +95,8 @@ fn run() -> Result<(), CliError> {
         }
         CliOptions::Simulate => {
             let machine = construct_test_machine();
-            let framework = Framework::new(machine);
-            let sim: Simulator = framework.into();
+            let framework = Framework::new(machine, rand::rng());
+            let sim: Simulator<_> = framework.into();
             let trace = Trace {
                 directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
                 timing_deltas: Box::new([10, 20, 30]),
