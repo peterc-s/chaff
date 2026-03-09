@@ -152,7 +152,7 @@ fn packet_ts_to_ms(header: PacketHeader) -> u64 {
     sec_ms + usec_ms
 }
 
-/// Converts packet information into traces
+/// Converts packet information into traces.
 fn packets_to_trace(
     packets: &[(PacketHeader, Vec<u8>)],
     linktype: Linktype,

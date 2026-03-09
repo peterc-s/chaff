@@ -60,10 +60,10 @@ impl Trace {
     /// Then, the [`Trace`] fields are written one after the other in the following order:
     /// - [`Trace::directions`]: 0 for [`Direction::Send`], 1 for [`Direction::Receive`], packed
     ///   LSB-first into a bitvector so packet `i` occupies bit `i % 8` of byte `i / 8`.
-    /// - [`Trace::timing_deltas`]
-    /// - [`Trace::sizes`]
+    /// - [`Trace::timing_deltas`].
+    /// - [`Trace::sizes`].
     ///
-    /// All fields are encoded little-endian
+    /// All fields are encoded little-endian.
     pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
         // Length-sensitive operation, should check field lengths are the same
         // before.
