@@ -9,3 +9,4 @@ The project is structured as follows:
 ## Crates
 - `chaff` - the main library for Chaff. Contains all the key functionality.
 - `chaff-cli` - the CLI which wraps the `chaff` library.
+- (not yet implemented) `chaff-numpy` - I think it might be best to separate out Numpy ndarray compatability into its own crate so no extra dependencies. May even be good to separate out the `capture.rs` module?

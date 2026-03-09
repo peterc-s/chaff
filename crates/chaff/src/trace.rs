@@ -9,7 +9,7 @@ use std::{
 use crate::errors::{ChaffError, TraceError};
 
 /// Packet direction.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Direction {
     /// From client to server.
     Send,
@@ -191,6 +191,50 @@ impl Trace {
         // tarpaulin can't seem to figure out this is covered by the round trip test.
         #[cfg(not(tarpaulin_include))]
         Ok(result)
+    }
+
+    /// Returns a [`TraceIter`], an iterator over a trace, which gives ([`Direction`], [`u32`],
+    /// [`u32`]) items as [`Trace`] is a Struct-of-Arrays.
+    pub fn iter(&self) -> TraceIter<'_> {
+        self.into_iter()
+    }
+}
+
+/// An iterator over a [`Trace`].
+pub struct TraceIter<'a> {
+    trace: &'a Trace,
+    index: usize,
+}
+
+impl Iterator for TraceIter<'_> {
+    type Item = (Direction, u32, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.trace.directions.len() {
+            return None;
+        }
+
+        let i = self.index;
+        self.index += 1;
+
+        Some((
+            self.trace.directions[i],
+            self.trace.timing_deltas[i],
+            self.trace.sizes[i],
+        ))
+    }
+}
+
+impl<'a> IntoIterator for &'a Trace {
+    type Item = (Direction, u32, u32);
+
+    type IntoIter = TraceIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TraceIter {
+            trace: self,
+            index: 0,
+        }
     }
 }
 
