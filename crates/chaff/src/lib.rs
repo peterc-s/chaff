@@ -1,7 +1,7 @@
 //! Chaff is an anti Website Fingerprinting (WF) framework.
 
 pub mod errors;
-pub mod machines;
+pub mod framework;
 pub mod trace;
 
 #[cfg(feature = "capture")]

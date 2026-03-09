@@ -200,6 +200,15 @@ impl Trace {
     }
 }
 
+impl std::fmt::Display for Trace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (dir, delta, size) in self {
+            writeln!(f, "+{delta} {dir:?}: {size}")?;
+        }
+        Ok(())
+    }
+}
+
 /// An iterator over a [`Trace`].
 pub struct TraceIter<'a> {
     trace: &'a Trace,

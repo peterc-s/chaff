@@ -10,9 +10,10 @@ use bpaf::Bpaf;
 use chaff::{
     capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
-    trace::Trace,
+    trace::{Direction, Trace},
 };
 use chaff_cli::errors::CliError;
+use chaff_sim::Simulator;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -37,6 +38,10 @@ pub enum CliOptions {
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
     },
+
+    #[bpaf(command("sim"))]
+    /// Simulate defences.
+    Simulate,
 }
 
 /// Wrapper around [`run()`] with error printing.
@@ -85,6 +90,16 @@ fn run() -> Result<(), CliError> {
         CliOptions::TraceStats { input } => {
             let trace = Trace::deserialise(&input)?;
             println!("Packets: {}", trace.directions.len());
+        }
+        CliOptions::Simulate => {
+            let sim = Simulator::default();
+            let trace = Trace {
+                directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
+                timing_deltas: Box::new([10, 20, 30]),
+                sizes: Box::new([100, 200, 300]),
+            };
+
+            println!("{}", sim.run(trace));
         }
     }
 

@@ -1,6 +1,6 @@
 [package]
-name = "chaff-cli"
-description = "Command line for Chaff - a library for implementing Website Fingerprinting defences."
+name = "chaff-sim"
+description = "Simulator for the Chaff Framework"
 version = "0.1.0"
 readme = "README.md"
 edition.workspace = true
@@ -18,6 +18,3 @@ default = []
 
 [dependencies]
 chaff = { version = "0.1.0", path = "../chaff/" }
-chaff-sim = { version = "0.1.0", path = "../chaff-sim/" }
-
-bpaf = { version = "0.9.22", features = ["derive"] }
