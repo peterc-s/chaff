@@ -7,7 +7,7 @@ use std::ops::{Index, IndexMut};
 
 use rand::Rng;
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Framework<R: Rng> {
     machine: Machine,
     runtime: MachineRuntime,
@@ -24,7 +24,10 @@ impl<R: Rng> Framework<R> {
     }
 
     fn get_trans_probs(&self) -> Option<TransitionProbs> {
-        self.machine.states[self.runtime.state].trans_probs
+        self.machine
+            .states
+            .get(self.runtime.state)
+            .map(|state| state.trans_probs)?
     }
 
     pub fn trigger_events(&mut self, events: &[Event]) -> Box<[Action]> {
@@ -41,9 +44,13 @@ impl<R: Rng> Framework<R> {
 
         resulting_actions.into_boxed_slice()
     }
+
+    pub fn get_state(&self) -> usize {
+        self.runtime.state
+    }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Machine {
     states: Vec<State>,
 }
@@ -54,13 +61,13 @@ impl Machine {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct MachineRuntime {
     /// Index into the [`Machine::states`] array.
     state: usize,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct State {
     pub(crate) trans_probs: Option<TransitionProbs>,
     pub(crate) action: Action,
@@ -134,7 +141,7 @@ impl IndexMut<Event> for TransitionProbs {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Action {
     #[default]
     SendDecoy,
@@ -144,7 +151,7 @@ pub enum Action {
 macro_rules! enum_index {
     ($name:ident { $($variant:ident),+ $(,)? }) => {
         #[repr(usize)]
-        #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
         pub enum $name {
             $($variant),+
         }

@@ -94,16 +94,17 @@ fn run() -> Result<(), CliError> {
             println!("Packets: {}", trace.directions.len());
         }
         CliOptions::Simulate => {
-            let machine = construct_test_machine();
-            let framework = Framework::new(machine, rand::rng());
-            let sim: Simulator<_> = framework.into();
             let trace = Trace {
                 directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
                 timing_deltas: Box::new([10, 20, 30]),
                 sizes: Box::new([100, 200, 300]),
             };
+            let machine = construct_test_machine();
+            let framework = Framework::new(machine, rand::rng());
+            let mut sim: Simulator<_> = Simulator::with(framework, trace);
 
-            println!("{}", sim.run(trace));
+            println!("{}", sim.run());
+            println!("{}", sim.framework.get_state());
         }
     }
 

@@ -20,7 +20,7 @@ pub enum Direction {
 
 /// Represents a trace explicitly with packet [Direction]s, packet timing deltas, and sizes
 /// (assumes non-fixed transmission unit size). Fixed-size, field lengths should match.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trace {
     /// The direction in which a packet was send.
     pub directions: Box<[Direction]>,
@@ -198,11 +198,21 @@ impl Trace {
     pub fn iter(&self) -> TraceIter<'_> {
         self.into_iter()
     }
+
+    /// Returns the length of the trace. Assumes all internal arrays are of equal length.
+    pub fn len(&self) -> usize {
+        self.directions.len()
+    }
+
+    /// Checks if the trace has any packets. Assumes all internal arrays are of equal length.
+    pub fn is_empty(&self) -> bool {
+        self.directions.is_empty()
+    }
 }
 
 impl std::fmt::Display for Trace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (dir, delta, size) in self {
+        for TracePacket(dir, delta, size) in self {
             writeln!(f, "+{delta} {dir:?}: {size}")?;
         }
         Ok(())
@@ -215,8 +225,11 @@ pub struct TraceIter<'a> {
     index: usize,
 }
 
+/// A single packet in a trace.
+pub struct TracePacket(pub Direction, pub u32, pub u32);
+
 impl Iterator for TraceIter<'_> {
-    type Item = (Direction, u32, u32);
+    type Item = TracePacket;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.trace.directions.len() {
@@ -226,7 +239,7 @@ impl Iterator for TraceIter<'_> {
         let i = self.index;
         self.index += 1;
 
-        Some((
+        Some(TracePacket(
             self.trace.directions[i],
             self.trace.timing_deltas[i],
             self.trace.sizes[i],
@@ -235,7 +248,7 @@ impl Iterator for TraceIter<'_> {
 }
 
 impl<'a> IntoIterator for &'a Trace {
-    type Item = (Direction, u32, u32);
+    type Item = TracePacket;
 
     type IntoIter = TraceIter<'a>;
 
