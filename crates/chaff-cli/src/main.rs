@@ -11,7 +11,7 @@ use chaff::{
     capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
     framework::Framework,
-    trace::{Direction, Trace},
+    trace::Trace,
 };
 use chaff_cli::errors::CliError;
 use chaff_machines::test::construct_test_machine;
@@ -43,7 +43,11 @@ pub enum CliOptions {
 
     #[bpaf(command("sim"))]
     /// Simulate defences.
-    Simulate,
+    Simulate {
+        /// Path to trace file to simulate a machine on.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
+    },
 }
 
 /// Wrapper around [`run()`] with error printing.
@@ -93,12 +97,8 @@ fn run() -> Result<(), CliError> {
             let trace = Trace::deserialise(&input)?;
             println!("Packets: {}", trace.directions.len());
         }
-        CliOptions::Simulate => {
-            let trace = Trace {
-                directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
-                timing_deltas: Box::new([10, 20, 30]),
-                sizes: Box::new([100, 200, 300]),
-            };
+        CliOptions::Simulate { input } => {
+            let trace = Trace::deserialise(&input)?;
             let machine = construct_test_machine();
             let framework = Framework::new(machine, rand::rng());
             let mut sim: Simulator<_> = Simulator::with(framework, trace);
