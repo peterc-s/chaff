@@ -1,5 +1,3 @@
-#![expect(missing_docs)]
-
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 use chaff::{
