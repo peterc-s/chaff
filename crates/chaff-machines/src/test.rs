@@ -1,6 +1,11 @@
 //! Test machine used while developing the Chaff framework.
 
-use chaff::framework::{Action, Event, Machine, State, TransitionProbs};
+use chaff::{
+    action::Action,
+    event::Event,
+    machine::Machine,
+    state::{State, TransitionProbs},
+};
 
 /// Construct the test machine.
 pub fn construct_test_machine() -> Machine {

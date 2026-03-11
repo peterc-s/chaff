@@ -1,15 +1,23 @@
+//! The Chaff simulator for creating defended traces with machines.
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 use chaff::{
-    framework::{Event, Framework},
+    event::Event,
+    framework::Framework,
     trace::{Direction, Trace, TracePacket},
 };
 use rand::Rng;
 
+/// A simulated event.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SimulatorEvent {
+    /// Inner [`Event`].
     event: Event,
+
+    /// The time of the [`Event`].
     time: u64,
+
+    /// Size of packet if needed.
     size: u32,
 }
 
@@ -27,6 +35,7 @@ impl PartialOrd for SimulatorEvent {
     }
 }
 
+/// Represents the device's ingress and egress queues.
 #[derive(Clone, Debug, Default)]
 pub struct SimulatorQueue {
     ingress: BinaryHeap<SimulatorEvent>,
@@ -34,6 +43,7 @@ pub struct SimulatorQueue {
 }
 
 impl SimulatorQueue {
+    /// Pops the soonest event in either the ingress or egress queue.
     pub fn pop_soonest(&mut self) -> Option<SimulatorEvent> {
         match (self.ingress.peek(), self.egress.peek()) {
             (None, None) => None,
@@ -76,14 +86,22 @@ impl From<Trace> for SimulatorQueue {
     }
 }
 
+/// An instance of the Chaff simulator.
 #[derive(Clone, Debug)]
 pub struct Simulator<R: Rng> {
+    /// An instance of the Chaff [`Framework`] to simulate.
     pub framework: Framework<R>,
+
+    /// The trace to simulate on ([`Simulator::queue`] is filled with this on [`Simulator::run`]).
     trace: Trace,
+
+    /// The simulated queues, filled with a [`Trace`].
     queue: SimulatorQueue,
 }
 
 impl<R: Rng> Simulator<R> {
+    /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
+    /// [`Trace`] to run the simulation on.
     pub fn with(framework: Framework<R>, trace: Trace) -> Self {
         Self {
             framework,
@@ -92,6 +110,7 @@ impl<R: Rng> Simulator<R> {
         }
     }
 
+    /// Run the simulation. This instantiates internal queues with the [`Simulator::trace`].
     pub fn run(&mut self) -> Trace {
         let trace_len = self.trace.len();
         self.queue = SimulatorQueue::from(self.trace.clone());
@@ -130,7 +149,7 @@ impl<R: Rng> Simulator<R> {
 
 #[cfg(test)]
 mod tests {
-    use chaff::framework::Machine;
+    use chaff::machine::Machine;
 
     use super::*;
 

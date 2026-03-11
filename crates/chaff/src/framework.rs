@@ -10,6 +10,7 @@ use crate::{
     state::TransitionProbs,
 };
 
+/// Represents an instance of the Chaff framework.
 #[derive(Default, Debug, Clone)]
 pub struct Framework<R: Rng> {
     machine: Machine,
@@ -18,6 +19,7 @@ pub struct Framework<R: Rng> {
 }
 
 impl<R: Rng> Framework<R> {
+    /// Create a new Chaff instance with the given RNG ([`rand::Rng`]) and [`Machine`].
     pub fn new(machine: Machine, rng: R) -> Self {
         Self {
             machine,
@@ -33,6 +35,7 @@ impl<R: Rng> Framework<R> {
             .map(|state| state.trans_probs)?
     }
 
+    /// "Trigger" a slice of events, returns actions the integrator must take.
     pub fn trigger_events(&mut self, events: &[Event]) -> Box<[Action]> {
         let mut resulting_actions = vec![];
 
@@ -48,6 +51,7 @@ impl<R: Rng> Framework<R> {
         resulting_actions.into_boxed_slice()
     }
 
+    /// Get the current state of the frameworks machine.
     pub fn get_state(&self) -> usize {
         self.runtime.state
     }

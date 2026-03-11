@@ -1,19 +1,35 @@
+//! Chaff events.
+
 // For easily working with events.
 macro_rules! enum_index {
-    ($name:ident { $($variant:ident),+ $(,)? }) => {
+    (
+        $(#[$enum_attr:meta])*
+        $name:ident {
+            $(
+                $(#[$variant_attr:meta])*
+                $variant:ident
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_attr])*
         #[repr(usize)]
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
         pub enum $name {
-            $($variant),+
+            $(
+                $(#[$variant_attr])*
+                $variant
+            ),+
         }
-
         impl $name {
+            /// Number of variants in the enum.
             pub const COUNT: usize = enum_index!(@count $($variant),+);
 
+            /// An array of all the variants in the enum.
             pub const ALL: [Self; Self::COUNT] = [
                 $(Self::$variant),+
             ];
 
+            /// Returns the index of a variant.
             pub const fn index(self) -> usize {
                 self as usize
             }
@@ -35,8 +51,12 @@ macro_rules! enum_index {
 }
 
 enum_index! {
+    /// Events
     Event {
+        /// Normal packet sent (egress)
         SendNormal,
+
+        /// Normal packet received (ingress)
         ReceiveNormal,
     }
 }
