@@ -21,7 +21,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
       #- uses: DeterminateSystems/magic-nix-cache-action@main # disabled due to long upload times
       - uses: DeterminateSystems/flake-checker-action@main
