@@ -1,5 +1,6 @@
 //! Use [libpcap](https://github.com/the-tcpdump-group/libpcap) through the [pcap] crate to capture
 //! a [`crate::trace::Trace`].
+// TODO: move to a separate crate so the main library does not depend on pcap or mac_address
 
 use std::time::Duration;
 
@@ -142,14 +143,14 @@ fn determine_packet_direction(
     }
 }
 
-/// Utility function to convert the [`pcap::PacketHeader::ts`] into milliseconds.
+/// Utility function to convert the [`pcap::PacketHeader::ts`] into microseconds.
 #[expect(clippy::cast_sign_loss)]
-fn packet_ts_to_ms(header: PacketHeader) -> u64 {
+fn packet_ts_to_us(header: PacketHeader) -> u64 {
     let tv = header.ts;
-    let sec_ms = (tv.tv_sec as u64) * 1000;
-    let usec_ms = (tv.tv_usec as u64) / 1000;
+    let sec_us = (tv.tv_sec as u64) * 1_000_000;
+    let usec_us = tv.tv_usec as u64;
 
-    sec_ms + usec_ms
+    sec_us + usec_us
 }
 
 /// Converts packet information into traces.
@@ -180,7 +181,7 @@ fn packets_to_trace(
         .chain(
             packets
                 .windows(2)
-                .map(|w| packet_ts_to_ms(w[1].0).saturating_sub(packet_ts_to_ms(w[0].0)) as u32),
+                .map(|w| packet_ts_to_us(w[1].0).saturating_sub(packet_ts_to_us(w[0].0)) as u32),
         )
         .collect::<Vec<_>>()
         .into_boxed_slice();
@@ -356,7 +357,7 @@ mod tests {
         assert!(dir.is_err());
     }
 
-    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::ETHERNET`.
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_us()`] and [`determine_packet_direction()`] with `Linktype::ETHERNET`.
     #[test]
     fn test_packets_to_trace_ethernet_from_file() {
         // Construct path to pcap
@@ -385,7 +386,7 @@ mod tests {
         assert!(matches!(trace.directions[1], Direction::Receive));
 
         assert_eq!(trace.timing_deltas[0], 0);
-        assert_eq!(trace.timing_deltas[1], 911);
+        assert_eq!(trace.timing_deltas[1], 911_310);
 
         // `tshark -r ./test-pcaps/test-http-5.pcap -T fields -e frame.len`
         assert_eq!(trace.sizes[0], 62);
@@ -393,7 +394,7 @@ mod tests {
         assert_eq!(trace.sizes[3], 533);
     }
 
-    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_us()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
     #[test]
     fn test_packets_to_trace_sll2_type_0_from_file() {
         // Construct path to pcap
@@ -420,7 +421,7 @@ mod tests {
         assert_eq!(trace.sizes[0], 144);
     }
 
-    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_ms()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
+    /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_us()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
     #[test]
     fn test_packets_to_trace_sll2_type_4_from_file() {
         // Construct path to pcap
