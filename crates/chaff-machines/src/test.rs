@@ -14,8 +14,11 @@ pub fn construct_test_machine() -> Machine {
         Event::ReceiveNormal => None,
     });
 
-    Machine::new(vec![
-        State::new(Some(trans_probs), Action::SendDecoy),
-        State::new(None, Action::SendDecoy),
-    ])
+    Machine::new(
+        vec![
+            State::new(Some(trans_probs), Action::SendDecoy),
+            State::new(None, Action::SendDecoy),
+        ],
+        0,
+    )
 }

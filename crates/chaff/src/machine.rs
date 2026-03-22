@@ -45,7 +45,7 @@ impl MachineRuntime {
         let mut actions = Vec::new();
 
         for queue in &mut self.queues {
-            actions.extend(queue.pop_ready(now))
+            actions.extend(queue.pop_ready(now));
         }
 
         actions

@@ -1,4 +1,3 @@
-#![expect(unused)]
 #![expect(missing_docs)]
 
 use std::{collections::BinaryHeap, time::Instant};
