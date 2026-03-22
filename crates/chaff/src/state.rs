@@ -59,10 +59,15 @@ impl TransitionProbs {
     ///
     /// # Example
     /// ```rust
+    /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
+    ///
     /// let trans_probs = TransitionProbs::from_fn(|event| match event {
     ///     Event::SendNormal => Some((1, 0.5).into()), // transition to state 1 with probability 0.5
     ///     Event::ReceiveNormal => None,
     /// });
+    ///
+    /// let trans = trans_probs[Event::SendNormal].unwrap();
+    /// assert_eq!(trans, Transition { index: 1, prob: 0.5 });
     /// ```
     pub fn from_fn<F>(mut f: F) -> Self
     where
