@@ -1,6 +1,8 @@
 //! The Chaff framework.
 // TODO: document
 
+use std::time::Instant;
+
 use rand::Rng;
 
 use crate::{
@@ -21,9 +23,10 @@ pub struct Framework<R: Rng> {
 impl<R: Rng> Framework<R> {
     /// Create a new Chaff instance with the given RNG ([`rand::Rng`]) and [`Machine`].
     pub fn new(machine: Machine, rng: R) -> Self {
+        let runtime = MachineRuntime::new(&machine);
         Self {
             machine,
-            runtime: MachineRuntime::default(),
+            runtime,
             rng,
         }
     }
@@ -49,6 +52,12 @@ impl<R: Rng> Framework<R> {
         }
 
         resulting_actions.into_boxed_slice()
+    }
+
+    /// Pops the [`MachineRuntime`]'s action queues giving a list of actions that the integrator
+    /// must take.
+    pub fn pop_queues(&mut self, now: Instant) -> Box<[Action]> {
+        self.runtime.pop_queues(now)
     }
 
     /// Get the current state of the frameworks machine.

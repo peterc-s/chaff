@@ -5,6 +5,7 @@ pub mod errors;
 pub mod event;
 pub mod framework;
 pub mod machine;
+pub mod queue;
 pub mod state;
 pub mod trace;
 
