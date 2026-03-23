@@ -7,10 +7,10 @@
 use std::path::PathBuf;
 
 use bpaf::Bpaf;
-use chaff::{
+use chaff::framework::Framework;
+use chaff_capture::{
     capture::{capture_for, find_interface},
-    errors::{CaptureError, ChaffError},
-    framework::Framework,
+    errors::CaptureError,
     trace::Trace,
 };
 use chaff_cli::errors::CliError;
@@ -69,8 +69,7 @@ fn run() -> Result<(), CliError> {
                 Some(name) => {
                     println!("Searching for device {name}...");
                     find_interface(&name)
-                        .map_err(CaptureError::Pcap)
-                        .map_err(ChaffError::Capture)?
+                        .map_err(CaptureError::from)?
                         .map_or_else(
                             || {
                                 println!("Device {name} not found.");
@@ -84,8 +83,8 @@ fn run() -> Result<(), CliError> {
                 }
                 None => Ok(None),
             }?;
-            let cap = capture_for(std::time::Duration::from_secs(10), device)
-                .map_err(ChaffError::Capture)?;
+            let cap = capture_for(std::time::Duration::from_secs(10), device)?;
+
             println!("Captured {} packets.", cap.directions.len());
 
             if let Some(path) = output {

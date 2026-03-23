@@ -1,6 +1,6 @@
 [package]
-name = "chaff"
-description = "Library for implementing and testing Website Fingerprinting defences"
+name = "chaff-capture"
+description = "Trace capture utilities for Chaff."
 version = "0.1.0"
 readme = "README.md"
 edition.workspace = true
@@ -17,4 +17,9 @@ workspace = true
 default = []
 
 [dependencies]
-rand = "0.9.2"
+mac_address = "1.1.8"
+pcap = "2.4.0"
+
+[[example]]
+name = "capture"
+path = "examples/capture.rs"

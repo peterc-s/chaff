@@ -1,6 +1,6 @@
 //! Test using pcap
 
-use chaff::capture::capture_for;
+use chaff_capture::capture::capture_for;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting capture");
