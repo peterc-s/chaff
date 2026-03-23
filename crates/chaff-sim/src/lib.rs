@@ -1,11 +1,8 @@
 //! The Chaff simulator for creating defended traces with machines.
 use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
-use chaff::{
-    event::Event,
-    framework::Framework,
-    trace::{Direction, Trace, TracePacket},
-};
+use chaff::{event::Event, framework::Framework};
+use chaff_capture::trace::{Direction, Trace, TracePacket};
 use rand::Rng;
 
 /// A simulated event.

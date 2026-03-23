@@ -5,7 +5,7 @@
 
 use std::{error::Error, fmt};
 
-use chaff::errors::ChaffError;
+use chaff_capture::errors::ChaffError;
 
 /// CLI errors
 #[derive(Debug)]

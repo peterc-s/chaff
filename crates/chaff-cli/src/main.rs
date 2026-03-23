@@ -7,10 +7,10 @@
 use std::path::PathBuf;
 
 use bpaf::Bpaf;
-use chaff::{
+use chaff::framework::Framework;
+use chaff_capture::{
     capture::{capture_for, find_interface},
     errors::{CaptureError, ChaffError},
-    framework::Framework,
     trace::Trace,
 };
 use chaff_cli::errors::CliError;
