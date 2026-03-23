@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use crate::errors::{ChaffError, TraceError};
+use crate::errors::TraceError;
 
 /// Packet direction.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -38,13 +38,17 @@ const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
 
 impl Trace {
     /// Should be used before a size-sensitive operation. Errors if lengths mismatch.
-    fn len_check(&self) -> Result<(), ChaffError> {
+    fn len_check(&self) -> Result<(), TraceError> {
         let directions_len = self.directions.len();
         let timing_deltas_len = self.timing_deltas.len();
         let sizes_len = self.sizes.len();
 
         if directions_len != timing_deltas_len || timing_deltas_len != sizes_len {
-            Err(TraceError::LengthMismatch(directions_len, timing_deltas_len, sizes_len).into())
+            Err(TraceError::LengthMismatch(
+                directions_len,
+                timing_deltas_len,
+                sizes_len,
+            ))
         } else {
             Ok(())
         }
@@ -64,7 +68,7 @@ impl Trace {
     /// - [`Trace::sizes`].
     ///
     /// All fields are encoded little-endian.
-    pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), ChaffError> {
+    pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), TraceError> {
         // Length-sensitive operation, should check field lengths are the same
         // before.
         self.len_check()?;
@@ -114,7 +118,7 @@ impl Trace {
 
     /// Deserialise a trace from a binary-format file, see [`Trace::serialise()`] for more
     /// information on the format.
-    pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, ChaffError> {
+    pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, TraceError> {
         // read file
         let bytes = fs::read(path).map_err(TraceError::Io)?;
         let mut cursor = Cursor::new(&bytes);
@@ -128,13 +132,13 @@ impl Trace {
         let mut magic = [0u8; 5];
         read(&mut magic)?;
         if magic != *TRACE_MAGIC {
-            return Err(TraceError::InvalidMagic(magic.into()).into());
+            return Err(TraceError::InvalidMagic(magic.into()));
         }
 
         let mut version = [0u8; 3];
         read(&mut version)?;
         if version != *TRACE_VERSION {
-            return Err(TraceError::InvalidVersion(version.into()).into());
+            return Err(TraceError::InvalidVersion(version.into()));
         }
 
         // read length
@@ -332,7 +336,7 @@ mod tests {
 
         // check for specific error
         match result {
-            Err(ChaffError::Trace(TraceError::LengthMismatch(3, 3, 2))) => {}
+            Err(TraceError::LengthMismatch(3, 3, 2)) => {}
             other => panic!("unexpected result: {other:?}"),
         }
     }
@@ -356,7 +360,7 @@ mod tests {
 
         // check for specific error
         match result {
-            Err(ChaffError::Trace(TraceError::InvalidMagic(found))) => {
+            Err(TraceError::InvalidMagic(found)) => {
                 let found: [u8; 5] = found[0..5].try_into().unwrap();
                 assert_eq!(&found, b"WRONG");
             }
@@ -383,7 +387,7 @@ mod tests {
 
         // check for specific error
         match result {
-            Err(ChaffError::Trace(TraceError::InvalidVersion(found))) => {
+            Err(TraceError::InvalidVersion(found)) => {
                 assert_eq!(*found, [255u8, 255u8, 255u8]);
             }
             other => panic!("unexpected result: {other:?}"),

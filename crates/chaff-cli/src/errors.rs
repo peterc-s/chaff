@@ -5,7 +5,7 @@
 
 use std::{error::Error, fmt};
 
-use chaff_capture::errors::ChaffError;
+use chaff_capture::errors::{CaptureError, TraceError};
 
 /// CLI errors
 #[derive(Debug)]
@@ -13,8 +13,8 @@ pub enum CliError {
     /// Device specified but not found
     DeviceNotFound(String),
 
-    /// Errors from the Chaff library
-    Library(ChaffError),
+    /// Errors from the chaff-capture crate
+    Capture(CaptureError),
 }
 
 const RESET: &str = "\x1b[0m";
@@ -25,7 +25,7 @@ impl Error for CliError {
     fn cause(&self) -> Option<&dyn Error> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Self::Library(e) => Some(e),
+            Self::Capture(e) => Some(e),
             _ => None,
         }
     }
@@ -36,13 +36,19 @@ impl fmt::Display for CliError {
         write!(f, "{BOLD}{RED}error:{RESET} ")?;
         match self {
             Self::DeviceNotFound(device) => write!(f, "device specified but not found: {device}"),
-            Self::Library(e) => write!(f, "library error: {e}"),
+            Self::Capture(e) => write!(f, "capture error: {e}"),
         }
     }
 }
 
-impl From<ChaffError> for CliError {
-    fn from(e: ChaffError) -> Self {
-        Self::Library(e)
+impl From<CaptureError> for CliError {
+    fn from(e: CaptureError) -> Self {
+        Self::Capture(e)
+    }
+}
+
+impl From<TraceError> for CliError {
+    fn from(e: TraceError) -> Self {
+        Self::Capture(CaptureError::Trace(e))
     }
 }

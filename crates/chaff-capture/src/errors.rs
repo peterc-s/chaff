@@ -15,47 +15,53 @@ macro_rules! impl_from {
     };
 }
 
-/// Primary error type for Chaff
+/// Primary error type for the `chaff_capture` crate.
 #[derive(Debug)]
-pub enum ChaffError {
-    /// Errors from [`crate::capture`].
-    Capture(CaptureError),
+pub enum CaptureError {
+    /// Errors relating to capture devices and packet handling.
+    Device(DeviceError),
 
-    /// Errors from [`crate::trace`]
+    /// Errors relating to trace serialisation and deserialisation.
     Trace(TraceError),
 }
 
-impl Error for ChaffError {
+impl Error for CaptureError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Capture(e) => Some(e),
+            Self::Device(e) => Some(e),
             Self::Trace(e) => Some(e),
         }
     }
 }
 
-impl fmt::Display for ChaffError {
+impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Capture(e) => write!(f, "capture error: {e}"),
+            Self::Device(e) => write!(f, "device error: {e}"),
             Self::Trace(e) => write!(f, "trace error: {e}"),
         }
     }
 }
 
-impl_from!(CaptureError, ChaffError, ChaffError::Capture);
-impl_from!(TraceError, ChaffError, ChaffError::Trace);
+impl From<pcap::Error> for CaptureError {
+    fn from(err: pcap::Error) -> Self {
+        Self::Device(DeviceError::Pcap(err))
+    }
+}
 
-/// Capture error type for the [`crate::capture`] module.
+impl_from!(DeviceError, CaptureError, CaptureError::Device);
+impl_from!(TraceError, CaptureError, CaptureError::Trace);
+
+/// Errors relating to capture devices, packet handling, and MAC addresses.
 #[derive(Debug)]
-pub enum CaptureError {
-    /// When no suitable device is found.
+pub enum DeviceError {
+    /// When no suitable capture device is found.
     NoDevice,
 
     /// When the capture thread fails in some way.
     CaptureThreadPanic,
 
-    /// A packet received or sent was found to be invalid while checking for packet directions.
+    /// A packet was found to be invalid while checking for packet directions.
     InvalidPacket(String),
 
     /// Wrapped errors from the [`pcap`] crate.
@@ -64,11 +70,11 @@ pub enum CaptureError {
     /// Wrapped errors from the [`mac_address`] crate.
     MacAddress(mac_address::MacAddressError),
 
-    /// Couldn't get MAC address for a device.
+    /// Couldn't get a MAC address for a device.
     NoMac(String),
 }
 
-impl Error for CaptureError {
+impl Error for DeviceError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Pcap(e) => Some(e),
@@ -78,12 +84,12 @@ impl Error for CaptureError {
     }
 }
 
-impl fmt::Display for CaptureError {
+impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::NoDevice => write!(f, "no capture device found."),
             Self::CaptureThreadPanic => write!(f, "capture thread panicked."),
-            Self::InvalidPacket(msg) => write!(f, "invalid packet found: {msg}"),
+            Self::InvalidPacket(msg) => write!(f, "invalid packet: {msg}"),
             Self::Pcap(inner) => write!(f, "pcap error: {inner}"),
             Self::MacAddress(inner) => write!(f, "mac address lookup failed: {inner}"),
             Self::NoMac(device) => write!(f, "could not get mac address for device: {device}"),
@@ -91,25 +97,25 @@ impl fmt::Display for CaptureError {
     }
 }
 
-impl_from!(pcap::Error, CaptureError, Self::Pcap);
-impl_from!(mac_address::MacAddressError, CaptureError, Self::MacAddress);
+impl_from!(pcap::Error, DeviceError, Self::Pcap);
+impl_from!(mac_address::MacAddressError, DeviceError, Self::MacAddress);
 
-/// Trace error type for the [`crate::trace`] module.
+/// Errors relating to trace file serialisation and deserialisation.
 #[derive(Debug)]
 pub enum TraceError {
-    /// When a [`crate::trace::Trace`]'s fields have mis-matched lengths.
+    /// A [`crate::trace::Trace`]'s fields have mismatched lengths.
     LengthMismatch(usize, usize, usize),
 
-    /// An I/O error when serialising or deserialising.
+    /// An I/O error during serialisation or deserialisation.
     Io(io::Error),
 
     /// Deserialised trace file has invalid magic bytes.
     InvalidMagic(Box<[u8]>),
 
-    /// Deserialised trace file has invalid version.
+    /// Deserialised trace file has an invalid version.
     InvalidVersion(Box<[u8]>),
 
-    /// Deserialised trace file ended unexpectedly.
+    /// Trace file ended unexpectedly during deserialisation.
     UnexpectedEof,
 }
 
@@ -120,15 +126,12 @@ impl fmt::Display for TraceError {
         match self {
             Self::LengthMismatch(directions, timing_deltas, sizes) => write!(
                 f,
-                "mis-matched trace field lengths. directions: {directions}, timing_deltas: {timing_deltas}, sizes: {sizes}."
+                "mismatched trace field lengths — directions: {directions}, \
+                 timing_deltas: {timing_deltas}, sizes: {sizes}."
             ),
             Self::Io(error) => write!(f, "io error: {error}"),
-            Self::InvalidMagic(magic) => {
-                write!(f, "invalid trace file magic bytes: {magic:?}")
-            }
-            Self::InvalidVersion(version) => {
-                write!(f, "invalid trace file version: {version:?}")
-            }
+            Self::InvalidMagic(magic) => write!(f, "invalid trace file magic bytes: {magic:?}"),
+            Self::InvalidVersion(version) => write!(f, "invalid trace file version: {version:?}"),
             Self::UnexpectedEof => write!(f, "trace file ended unexpectedly."),
         }
     }

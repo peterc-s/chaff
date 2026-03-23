@@ -7,6 +7,7 @@ use std::time::Duration;
 use mac_address::{MacAddress, mac_address_by_name};
 use pcap::{Capture, Device, Linktype, PacketHeader};
 
+use crate::errors::DeviceError;
 use crate::{
     errors::CaptureError,
     trace::{Direction, Trace},
@@ -23,8 +24,8 @@ pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
 // This isn't unit testable because it requires either spoofing or knowing the device name and MAC
 // address of said device.
 #[cfg(not(tarpaulin_include))]
-fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
-    mac_address_by_name(&device.name)?.ok_or_else(|| CaptureError::NoMac(device.name.clone()))
+fn get_device_mac(device: &Device) -> Result<MacAddress, DeviceError> {
+    mac_address_by_name(&device.name)?.ok_or_else(|| DeviceError::NoMac(device.name.clone()))
 }
 
 /// Activates the given `capture` for the given [`Duration`] and produces a [`crate::trace::Trace`].
@@ -34,7 +35,7 @@ fn get_device_mac(device: &Device) -> Result<MacAddress, CaptureError> {
 // require running as root or setting capabilities which requires root).
 #[cfg(not(tarpaulin_include))]
 pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, CaptureError> {
-    let device = device.unwrap_or(Device::lookup()?.ok_or(CaptureError::NoDevice)?);
+    let device = device.unwrap_or(Device::lookup()?.ok_or(DeviceError::NoDevice)?);
     let mac_address = get_device_mac(&device)?;
 
     let capture = Capture::from_device(device)?;
@@ -66,7 +67,7 @@ pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, 
 
     let packets = capture_thread
         .join()
-        .map_err(|_| CaptureError::CaptureThreadPanic)??;
+        .map_err(|_| DeviceError::CaptureThreadPanic)??;
 
     packets_to_trace(&packets, linktype, mac_address)
 }
@@ -77,13 +78,13 @@ fn determine_packet_direction(
     data: &[u8],
     linktype: Linktype,
     local_mac: [u8; 6],
-) -> Result<Direction, CaptureError> {
+) -> Result<Direction, DeviceError> {
     match linktype {
         // Reference: https://ieeexplore.ieee.org/document/7428776
         Linktype::ETHERNET => {
             // make sure the bytes we want are there
             if data.len() < 12 {
-                return Err(CaptureError::InvalidPacket(
+                return Err(DeviceError::InvalidPacket(
                     "Ethernet frame too short".into(),
                 ));
             }
@@ -104,7 +105,7 @@ fn determine_packet_direction(
         Linktype::LINUX_SLL => {
             // make sure the bytes we want are there
             if data.len() < 2 {
-                return Err(CaptureError::InvalidPacket("SLL frame too short".into()));
+                return Err(DeviceError::InvalidPacket("SLL frame too short".into()));
             }
 
             let packet_type = u16::from_be_bytes([data[0], data[1]]);
@@ -113,7 +114,7 @@ fn determine_packet_direction(
                 0..=3 => Ok(Direction::Receive),
                 // 4 is sent by us
                 4 => Ok(Direction::Send),
-                _ => Err(CaptureError::InvalidPacket(format!(
+                _ => Err(DeviceError::InvalidPacket(format!(
                     "Invalid SLL type: {packet_type}"
                 ))),
             }
@@ -123,7 +124,7 @@ fn determine_packet_direction(
         Linktype::LINUX_SLL2 => {
             // make sure the bytes we want are there
             if data.len() < 11 {
-                return Err(CaptureError::InvalidPacket("SLL2 frame too short".into()));
+                return Err(DeviceError::InvalidPacket("SLL2 frame too short".into()));
             }
 
             match data[10] {
@@ -131,13 +132,13 @@ fn determine_packet_direction(
                 0..=3 => Ok(Direction::Receive),
                 // 4 is sent by us
                 4 => Ok(Direction::Send),
-                _ => Err(CaptureError::InvalidPacket(format!(
+                _ => Err(DeviceError::InvalidPacket(format!(
                     "Invalid SLL2 type: {}",
                     data[10]
                 ))),
             }
         }
-        _ => Err(CaptureError::InvalidPacket(format!(
+        _ => Err(DeviceError::InvalidPacket(format!(
             "Unsupported linktype: {linktype:?}"
         ))),
     }
