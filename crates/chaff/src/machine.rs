@@ -55,3 +55,48 @@ impl MachineRuntime {
             .into_boxed_slice()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{event::Event, framework::Framework, state::TransitionProbs};
+
+    use super::*;
+
+    #[test]
+    fn test_queues_correct_len() {
+        let trans_probs = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((1, 0.0).into()),
+            Event::ReceiveNormal => None,
+        });
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), Action::SendDecoy),
+                State::new(None, Action::SendDecoy),
+            ],
+            42,
+        );
+        let framework = Framework::new(machine, rand::rng());
+
+        assert_eq!(
+            framework.runtime.queues.len(),
+            framework.machine.queues as usize
+        );
+    }
+
+    #[test]
+    fn test_pop_queues_with_data() {
+        let machine = Machine::new(vec![], 1);
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        framework.runtime.queues[0].push(TimedAction {
+            action: Action::SendDecoy,
+            execute_at: now,
+        });
+
+        let actions = framework.pop_queues(now);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], Action::SendDecoy);
+    }
+}

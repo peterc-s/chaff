@@ -1,5 +1,8 @@
 //! Chaff events.
 
+// Not testable, manually tested.
+#![cfg(not(tarpaulin_include))]
+
 // For easily working with events.
 macro_rules! enum_index {
     (

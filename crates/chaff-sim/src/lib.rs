@@ -120,7 +120,7 @@ impl<R: Rng> Simulator<R> {
         let mut last_event_ts = 0;
         while let Some(event) = self.queue.pop_soonest() {
             let now = Instant::now();
-            // unused for now
+            // FIXME: unused for now
             let _ = self
                 .framework
                 .trigger_events_and_pop_queues(&[event.event], now);
@@ -148,6 +148,7 @@ impl<R: Rng> Simulator<R> {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use chaff::machine::Machine;
 
@@ -166,5 +167,47 @@ mod tests {
         let out_trace = sim.run();
 
         assert_eq!(trace, out_trace);
+    }
+
+    #[test]
+    fn test_sim_event_ord() {
+        let early = SimulatorEvent {
+            event: Event::SendNormal,
+            time: 10,
+            size: 100,
+        };
+        let late = SimulatorEvent {
+            event: Event::SendNormal,
+            time: 20,
+            size: 100,
+        };
+
+        assert_eq!(early.cmp(&late), Ordering::Greater);
+        assert_eq!(late.cmp(&early), Ordering::Less);
+        assert!(early > late);
+
+        let early_alt = SimulatorEvent {
+            event: Event::SendNormal,
+            time: 10,
+            size: 500,
+        };
+        assert_eq!(early.time.cmp(&early_alt.time), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_pop_soonest_ingress() {
+        let mut queue = SimulatorQueue::default();
+
+        queue.ingress.push(SimulatorEvent {
+            event: Event::ReceiveNormal,
+            time: 50,
+            size: 0,
+        });
+
+        let popped = queue.pop_soonest();
+
+        assert!(popped.is_some());
+        assert_eq!(popped.unwrap().event, Event::ReceiveNormal);
+        assert!(queue.pop_soonest().is_none());
     }
 }

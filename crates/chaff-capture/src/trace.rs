@@ -266,6 +266,7 @@ impl<'a> IntoIterator for &'a Trace {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
     use super::*;
     use std::fs;
@@ -410,5 +411,64 @@ mod tests {
         // check trace is the same
         let trace_deserialised = Trace::deserialise(&path).unwrap();
         assert_eq!(trace, trace_deserialised);
+    }
+
+    #[test]
+    fn test_trace_is_empty() {
+        let empty_trace = Trace {
+            directions: Box::new([]),
+            timing_deltas: Box::new([]),
+            sizes: Box::new([]),
+        };
+        assert!(empty_trace.is_empty());
+        assert_eq!(empty_trace.len(), 0);
+
+        let non_empty_trace = Trace {
+            directions: Box::new([Direction::Send]),
+            timing_deltas: Box::new([0]),
+            sizes: Box::new([0]),
+        };
+        assert!(!non_empty_trace.is_empty());
+        assert_eq!(non_empty_trace.len(), 1);
+    }
+
+    #[test]
+    fn test_trace_iterator() {
+        let trace = Trace {
+            directions: Box::new([Direction::Send, Direction::Receive]),
+            timing_deltas: Box::new([10, 20]),
+            sizes: Box::new([100, 200]),
+        };
+
+        let mut iter = trace.iter();
+
+        let p1 = iter.next().expect("Should have first packet");
+        assert!(matches!(p1.0, Direction::Send));
+        assert_eq!(p1.1, 10);
+        assert_eq!(p1.2, 100);
+
+        let p2 = iter.next().expect("Should have second packet");
+        assert!(matches!(p2.0, Direction::Receive));
+        assert_eq!(p2.1, 20);
+        assert_eq!(p2.2, 200);
+
+        assert!(iter.next().is_none());
+
+        let collected = (&trace).into_iter();
+        assert_eq!(collected.count(), 2);
+    }
+
+    #[test]
+    fn test_trace_display_format() {
+        let trace = Trace {
+            directions: Box::new([Direction::Send, Direction::Receive]),
+            timing_deltas: Box::new([5, 15]),
+            sizes: Box::new([64, 1500]),
+        };
+
+        let output = format!("{trace}");
+        let expected = "+5 Send: 64\n+15 Receive: 1500\n";
+
+        assert_eq!(output, expected);
     }
 }
