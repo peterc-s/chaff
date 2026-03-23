@@ -1,5 +1,5 @@
 //! The Chaff simulator for creating defended traces with machines.
-use std::{cmp::Ordering, collections::BinaryHeap};
+use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
 use chaff::{
     event::Event,
@@ -122,8 +122,11 @@ impl<R: Rng> Simulator<R> {
 
         let mut last_event_ts = 0;
         while let Some(event) = self.queue.pop_soonest() {
+            let now = Instant::now();
             // unused for now
-            let _ = self.framework.trigger_events(&[event.event]);
+            let _ = self
+                .framework
+                .trigger_events_and_pop_queues(&[event.event], now);
 
             directions.push(match event.event {
                 Event::SendNormal => Direction::Send,

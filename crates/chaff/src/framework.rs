@@ -60,6 +60,19 @@ impl<R: Rng> Framework<R> {
         self.runtime.pop_queues(now)
     }
 
+    /// First pops the queues with [`Framework::pop_queues()`], then triggers the given events with [`Framework::trigger_events()`],
+    /// returning the concatenation of the resulting [`Box<T>`]'s of [`Action`] slices.
+    pub fn trigger_events_and_pop_queues(
+        &mut self,
+        events: &[Event],
+        now: Instant,
+    ) -> Box<[Action]> {
+        self.pop_queues(now)
+            .into_iter()
+            .chain(self.trigger_events(events))
+            .collect()
+    }
+
     /// Get the current state of the frameworks machine.
     pub fn get_state(&self) -> usize {
         self.runtime.state
