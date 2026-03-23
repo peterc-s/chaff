@@ -84,7 +84,7 @@ impl TransitionProbs {
     /// transition occurs.
     pub fn trigger(&self, rng: &mut impl Rng, event: Event) -> Option<usize> {
         self[event].and_then(|trans| {
-            if trans.prob < rng.random() {
+            if trans.prob >= rng.random() {
                 Some(trans.index)
             } else {
                 None
