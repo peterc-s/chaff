@@ -57,6 +57,7 @@ impl MachineRuntime {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use crate::{event::Event, framework::Framework, state::TransitionProbs};
 
