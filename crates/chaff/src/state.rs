@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 
 use rand::Rng;
 
-use crate::{action::Action, event::Event};
+use crate::{action::Action, errors::ValidationError, event::Event};
 
 /// Represents a single state in a [`crate::machine::Machine`].
 #[derive(Default, Debug, Clone, Copy)]
@@ -64,12 +64,12 @@ impl TransitionProbs {
     /// let trans_probs = TransitionProbs::from_fn(|event| match event {
     ///     Event::SendNormal => Some((1, 0.5).into()), // transition to state 1 with probability 0.5
     ///     Event::ReceiveNormal => None,
-    /// });
+    /// }).unwrap();
     ///
     /// let trans = trans_probs[Event::SendNormal].unwrap();
     /// assert_eq!(trans, Transition { index: 1, prob: 0.5 });
     /// ```
-    pub fn from_fn<F>(mut f: F) -> Self
+    pub fn from_fn<F>(mut f: F) -> Result<Self, ValidationError>
     where
         F: FnMut(Event) -> Option<Transition>,
     {
@@ -77,7 +77,15 @@ impl TransitionProbs {
         for event in Event::ALL {
             probs[event] = f(event);
         }
-        probs
+
+        // get sum of transition probabilities
+        let sum = probs.0.iter().flatten().map(|x| x.prob).sum::<f32>();
+
+        if (0.0..=1.0).contains(&sum) {
+            Ok(probs)
+        } else {
+            Err(ValidationError::BadTransitionProbs(sum))
+        }
     }
 
     /// "Trigger" a transition probabilistically based on the given event. Returns [`None`] if no
@@ -104,5 +112,33 @@ impl Index<Event> for TransitionProbs {
 impl IndexMut<Event> for TransitionProbs {
     fn index_mut(&mut self, index: Event) -> &mut Self::Output {
         &mut self.0[index.index()]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_probs_validation() {
+        let over_1 = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((0, 1.0).into()),
+            Event::ReceiveNormal => Some((0, f32::EPSILON).into()),
+        });
+
+        let under_0 = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((0, 0.0).into()),
+            Event::ReceiveNormal => Some((0, -f32::EPSILON).into()),
+        });
+
+        assert!(over_1.is_err());
+        assert!(under_0.is_err());
+
+        let exact_1 = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((0, 1.0).into()),
+            Event::ReceiveNormal => Some((0, 0.0).into()),
+        });
+
+        assert!(exact_1.is_ok());
     }
 }

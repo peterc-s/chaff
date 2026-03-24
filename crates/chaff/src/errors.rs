@@ -29,8 +29,11 @@ impl fmt::Display for ChaffError {
 /// Errors that could occur during validation of a machine spec or its component parts.
 #[derive(Debug)]
 pub enum ValidationError {
-    TransitionProbsOverOne,
-    TransitionToInvalidState,
+    /// [`crate::state::TransitionProbs`] probabilities exceed `1.0` or are negative.
+    BadTransitionProbs(f32),
+
+    /// A [`crate::state::Transition`] leads to an out-of-range/non-existent state.
+    TransitionToInvalidState(usize),
 }
 
 impl Error for ValidationError {
@@ -42,11 +45,13 @@ impl Error for ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TransitionProbsOverOne => write!(
+            Self::BadTransitionProbs(prob) => write!(
                 f,
-                "transition probabilities sum to a value greater than 1.0"
+                "sum transition probabilities is either negative or exceeds 1.0 (found: {prob})"
             ),
-            Self::TransitionToInvalidState => write!(f, "transition to an invalid state"),
+            Self::TransitionToInvalidState(state) => {
+                write!(f, "transition to an invalid state {state}")
+            }
         }
     }
 }

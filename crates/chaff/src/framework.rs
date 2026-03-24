@@ -97,7 +97,8 @@ mod tests {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
             Event::SendNormal => Some((1, 0.5).into()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
@@ -116,7 +117,8 @@ mod tests {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
             Event::SendNormal => Some((1, 1.0).into()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
@@ -140,7 +142,8 @@ mod tests {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
             Event::SendNormal => Some((1, 0.0).into()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
