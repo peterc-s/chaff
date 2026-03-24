@@ -4,6 +4,7 @@ use std::{borrow::Borrow, time::Instant};
 
 use crate::{
     action::Action,
+    errors::ValidationError,
     queue::{TimedAction, TimedQueue},
     state::State,
 };
@@ -17,8 +18,24 @@ pub struct Machine {
 
 impl Machine {
     /// Create a new [`Machine`] with the given states.
-    pub fn new(states: Vec<State>, queues: u8) -> Self {
-        Self { states, queues }
+    pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
+        // find transitions with indices exceeding the number of states
+        let num_states = states.len();
+        let invalid_transitions = states
+            .iter()
+            .filter_map(|state| state.trans_probs.as_ref())
+            .flat_map(|probs| probs.0.iter().flatten())
+            .map(|trans| trans.index)
+            .filter(|&index| index > num_states)
+            .collect::<Vec<_>>();
+
+        if invalid_transitions.is_empty() {
+            Ok(Self { states, queues })
+        } else {
+            Err(ValidationError::TransitionToInvalidState(
+                invalid_transitions.into_boxed_slice(),
+            ))
+        }
     }
 }
 
@@ -77,7 +94,8 @@ mod tests {
                 State::new(None, Action::SendDecoy),
             ],
             42,
-        );
+        )
+        .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
         assert_eq!(
@@ -88,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_pop_queues_with_data() {
-        let machine = Machine::new(vec![], 1);
+        let machine = Machine::new(vec![], 1).unwrap();
         let mut framework = Framework::new(machine, rand::rng());
         let now = Instant::now();
 

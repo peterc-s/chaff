@@ -33,7 +33,7 @@ pub enum ValidationError {
     BadTransitionProbs(f32),
 
     /// A [`crate::state::Transition`] leads to an out-of-range/non-existent state.
-    TransitionToInvalidState(usize),
+    TransitionToInvalidState(Box<[usize]>),
 }
 
 impl Error for ValidationError {
@@ -49,8 +49,8 @@ impl fmt::Display for ValidationError {
                 f,
                 "sum transition probabilities is either negative or exceeds 1.0 (found: {prob})"
             ),
-            Self::TransitionToInvalidState(state) => {
-                write!(f, "transition to an invalid state {state}")
+            Self::TransitionToInvalidState(states) => {
+                write!(f, "transition to an invalid state(s) {states:?}")
             }
         }
     }

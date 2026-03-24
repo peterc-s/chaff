@@ -105,7 +105,8 @@ mod tests {
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
@@ -125,7 +126,8 @@ mod tests {
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
@@ -150,7 +152,8 @@ mod tests {
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
