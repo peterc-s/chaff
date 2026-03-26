@@ -32,12 +32,7 @@ impl<R: Rng> Framework<R> {
     }
 
     fn get_trans_probs(&self) -> Option<TransitionProbs> {
-        // TODO: this path can't be covered yet, an out-of-range index causes a panic in trigger_events, which should instead be an error
-        // but this means adding errors to the main crate, which I'll do later.
-        self.machine
-            .states
-            .get(self.runtime.state)
-            .map(|state| state.trans_probs)?
+        self.machine.states.get(self.runtime.state)?.trans_probs
     }
 
     /// "Trigger" a slice of events, returns actions the integrator must take.
@@ -48,7 +43,12 @@ impl<R: Rng> Framework<R> {
             if let Some(trans_probs) = self.get_trans_probs() {
                 if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
                     self.runtime.state = new_state;
-                    resulting_actions.push(self.machine.states[new_state].action);
+
+                    // the indexing here should be safe as we validate transitions in
+                    // Machine::new().
+                    let resulting_action = self.machine.states[new_state].action;
+
+                    resulting_actions.push(resulting_action);
                 }
             }
         }
@@ -95,16 +95,18 @@ mod tests {
     #[test]
     fn test_get_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.5).into()),
+            Event::SendNormal => Some((1, 0.5).try_into().unwrap()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
@@ -114,16 +116,18 @@ mod tests {
     #[test]
     fn test_trigger_and_get_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 1.0).into()),
+            Event::SendNormal => Some((1, 1.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
@@ -138,16 +142,18 @@ mod tests {
     #[test]
     fn test_trigger_with_0_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.0).into()),
+            Event::SendNormal => Some((1, 0.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
-        });
+        })
+        .unwrap();
         let machine = Machine::new(
             vec![
                 State::new(Some(trans_probs), Action::SendDecoy),
                 State::new(None, Action::SendDecoy),
             ],
             0,
-        );
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
@@ -159,14 +165,14 @@ mod tests {
         assert_eq!(framework.get_state(), 0);
     }
 
-    // #[test]
-    // fn test_invalid_state_transition() {
-    //     let trans_probs = TransitionProbs::from_fn(|_| Some((99, 1.0).into()));
-    //     let machine = Machine::new(vec![State::new(Some(trans_probs), Action::SendDecoy)], 0);
-    //     let mut framework = Framework::new(machine, rand::rng());
-    //
-    //     framework.trigger_events(&[Event::SendNormal]);
-    //
-    //     assert!(framework.get_trans_probs().is_none());
-    // }
+    #[test]
+    fn test_get_trans_probs_invalid_state() {
+        let machine = Machine::new(vec![State::new(None, Action::SendDecoy)], 0).unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        // force bad behaviour
+        framework.runtime.state = 999;
+
+        assert!(framework.get_trans_probs().is_none());
+    }
 }

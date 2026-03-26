@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 
 use rand::Rng;
 
-use crate::{action::Action, event::Event};
+use crate::{action::Action, errors::ValidationError, event::Event};
 
 /// Represents a single state in a [`crate::machine::Machine`].
 #[derive(Default, Debug, Clone, Copy)]
@@ -37,11 +37,17 @@ pub struct Transition {
     pub prob: f32,
 }
 
-impl From<(usize, f32)> for Transition {
-    fn from(value: (usize, f32)) -> Self {
-        Self {
-            index: value.0,
-            prob: value.1,
+impl TryFrom<(usize, f32)> for Transition {
+    type Error = ValidationError;
+
+    fn try_from(value: (usize, f32)) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&value.1) {
+            Ok(Self {
+                index: value.0,
+                prob: value.1,
+            })
+        } else {
+            Err(ValidationError::BadTransitionProbs(value.1))
         }
     }
 }
@@ -62,14 +68,14 @@ impl TransitionProbs {
     /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
     ///
     /// let trans_probs = TransitionProbs::from_fn(|event| match event {
-    ///     Event::SendNormal => Some((1, 0.5).into()), // transition to state 1 with probability 0.5
+    ///     Event::SendNormal => Some((1, 0.5).try_into().unwrap()), // transition to state 1 with probability 0.5
     ///     Event::ReceiveNormal => None,
-    /// });
+    /// }).unwrap();
     ///
     /// let trans = trans_probs[Event::SendNormal].unwrap();
     /// assert_eq!(trans, Transition { index: 1, prob: 0.5 });
     /// ```
-    pub fn from_fn<F>(mut f: F) -> Self
+    pub fn from_fn<F>(mut f: F) -> Result<Self, ValidationError>
     where
         F: FnMut(Event) -> Option<Transition>,
     {
@@ -77,7 +83,15 @@ impl TransitionProbs {
         for event in Event::ALL {
             probs[event] = f(event);
         }
-        probs
+
+        // get sum of transition probabilities
+        let sum = probs.0.iter().flatten().map(|x| x.prob).sum::<f32>();
+
+        if (0.0..=1.0).contains(&sum) {
+            Ok(probs)
+        } else {
+            Err(ValidationError::BadTransitionProbs(sum))
+        }
     }
 
     /// "Trigger" a transition probabilistically based on the given event. Returns [`None`] if no
@@ -104,5 +118,46 @@ impl Index<Event> for TransitionProbs {
 impl IndexMut<Event> for TransitionProbs {
     fn index_mut(&mut self, index: Event) -> &mut Self::Output {
         &mut self.0[index.index()]
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_probs_validation() {
+        let over_1 = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((0, 1.0).try_into().unwrap()),
+            Event::ReceiveNormal => Some((0, f32::EPSILON).try_into().unwrap()),
+        });
+
+        assert!(over_1.is_err());
+
+        let exact_1 = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((0, 1.0).try_into().unwrap()),
+            Event::ReceiveNormal => Some((0, 0.0).try_into().unwrap()),
+        });
+
+        assert!(exact_1.is_ok());
+
+        let negative: Result<Transition, _> = (0, -f32::EPSILON).try_into();
+        match negative {
+            #[expect(clippy::float_cmp)]
+            Err(ValidationError::BadTransitionProbs(prob)) => {
+                assert_eq!(prob, -f32::EPSILON);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        let over_1: Result<Transition, _> = (0, 1.0 + f32::EPSILON).try_into();
+        match over_1 {
+            #[expect(clippy::float_cmp)]
+            Err(ValidationError::BadTransitionProbs(prob)) => {
+                assert_eq!(prob, 1.0 + f32::EPSILON);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }
