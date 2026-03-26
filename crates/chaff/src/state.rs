@@ -150,5 +150,14 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+
+        let over_1: Result<Transition, _> = (0, 1.0 + f32::EPSILON).try_into();
+        match over_1 {
+            #[expect(clippy::float_cmp)]
+            Err(ValidationError::BadTransitionProbs(prob)) => {
+                assert_eq!(prob, 1.0 + f32::EPSILON);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }
