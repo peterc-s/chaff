@@ -29,7 +29,7 @@ impl fmt::Display for ChaffError {
 /// Errors that could occur during validation of a machine spec or its component parts.
 #[derive(Debug)]
 pub enum ValidationError {
-    /// [`crate::state::TransitionProbs`] probabilities exceed `1.0` or are negative.
+    /// [`crate::state::TransitionProbs`] or [`crate::state::Transition`] probabilities exceed `1.0` or are negative.
     BadTransitionProbs(f32),
 
     /// A [`crate::state::Transition`] leads to an out-of-range/non-existent state.

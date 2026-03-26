@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn test_queues_correct_len() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.0).into()),
+            Event::SendNormal => Some((1, 0.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
         })
         .unwrap();
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn test_validate_invalid_state() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((3, 0.0).into()),
+            Event::SendNormal => Some((3, 0.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
         })
         .unwrap();

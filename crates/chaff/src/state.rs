@@ -37,11 +37,17 @@ pub struct Transition {
     pub prob: f32,
 }
 
-impl From<(usize, f32)> for Transition {
-    fn from(value: (usize, f32)) -> Self {
-        Self {
-            index: value.0,
-            prob: value.1,
+impl TryFrom<(usize, f32)> for Transition {
+    type Error = ValidationError;
+
+    fn try_from(value: (usize, f32)) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&value.1) {
+            Ok(Self {
+                index: value.0,
+                prob: value.1,
+            })
+        } else {
+            Err(ValidationError::BadTransitionProbs(value.1))
         }
     }
 }
@@ -116,29 +122,33 @@ impl IndexMut<Event> for TransitionProbs {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_probs_validation() {
         let over_1 = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((0, 1.0).into()),
-            Event::ReceiveNormal => Some((0, f32::EPSILON).into()),
-        });
-
-        let under_0 = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((0, 0.0).into()),
-            Event::ReceiveNormal => Some((0, -f32::EPSILON).into()),
+            Event::SendNormal => Some((0, 1.0).try_into().unwrap()),
+            Event::ReceiveNormal => Some((0, f32::EPSILON).try_into().unwrap()),
         });
 
         assert!(over_1.is_err());
-        assert!(under_0.is_err());
 
         let exact_1 = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((0, 1.0).into()),
-            Event::ReceiveNormal => Some((0, 0.0).into()),
+            Event::SendNormal => Some((0, 1.0).try_into().unwrap()),
+            Event::ReceiveNormal => Some((0, 0.0).try_into().unwrap()),
         });
 
         assert!(exact_1.is_ok());
+
+        let negative: Result<Transition, _> = (0, -f32::EPSILON).try_into();
+        match negative {
+            #[expect(clippy::float_cmp)]
+            Err(ValidationError::BadTransitionProbs(prob)) => {
+                assert_eq!(prob, -f32::EPSILON);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }

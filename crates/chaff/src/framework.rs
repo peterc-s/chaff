@@ -44,7 +44,7 @@ impl<R: Rng> Framework<R> {
                 if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
                     self.runtime.state = new_state;
 
-                    // indexing here should be safe as we validate transitions in
+                    // the indexing here should be safe as we validate transitions in
                     // Machine::new().
                     let resulting_action = self.machine.states[new_state].action;
 
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_get_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.5).into()),
+            Event::SendNormal => Some((1, 0.5).try_into().unwrap()),
             Event::ReceiveNormal => None,
         })
         .unwrap();
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_trigger_and_get_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 1.0).into()),
+            Event::SendNormal => Some((1, 1.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
         })
         .unwrap();
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn test_trigger_with_0_trans_probs() {
         let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.0).into()),
+            Event::SendNormal => Some((1, 0.0).try_into().unwrap()),
             Event::ReceiveNormal => None,
         })
         .unwrap();
