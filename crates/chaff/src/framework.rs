@@ -32,12 +32,7 @@ impl<R: Rng> Framework<R> {
     }
 
     fn get_trans_probs(&self) -> Option<TransitionProbs> {
-        // TODO: this path can't be covered yet, an out-of-range index causes a panic in trigger_events, which should instead be an error
-        // but this means adding errors to the main crate, which I'll do later.
-        self.machine
-            .states
-            .get(self.runtime.state)
-            .map(|state| state.trans_probs)?
+        self.machine.states.get(self.runtime.state)?.trans_probs
     }
 
     /// "Trigger" a slice of events, returns actions the integrator must take.
@@ -48,7 +43,12 @@ impl<R: Rng> Framework<R> {
             if let Some(trans_probs) = self.get_trans_probs() {
                 if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
                     self.runtime.state = new_state;
-                    resulting_actions.push(self.machine.states[new_state].action);
+
+                    // indexing here should be safe as we validate transitions in
+                    // Machine::new().
+                    let resulting_action = self.machine.states[new_state].action;
+
+                    resulting_actions.push(resulting_action);
                 }
             }
         }
@@ -165,14 +165,14 @@ mod tests {
         assert_eq!(framework.get_state(), 0);
     }
 
-    // #[test]
-    // fn test_invalid_state_transition() {
-    //     let trans_probs = TransitionProbs::from_fn(|_| Some((99, 1.0).into()));
-    //     let machine = Machine::new(vec![State::new(Some(trans_probs), Action::SendDecoy)], 0);
-    //     let mut framework = Framework::new(machine, rand::rng());
-    //
-    //     framework.trigger_events(&[Event::SendNormal]);
-    //
-    //     assert!(framework.get_trans_probs().is_none());
-    // }
+    #[test]
+    fn test_get_trans_probs_invalid_state() {
+        let machine = Machine::new(vec![State::new(None, Action::SendDecoy)], 0).unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        // force bad behaviour
+        framework.runtime.state = 999;
+
+        assert!(framework.get_trans_probs().is_none());
+    }
 }

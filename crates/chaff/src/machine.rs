@@ -120,4 +120,28 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0], Action::SendDecoy);
     }
+
+    #[test]
+    fn test_validate_invalid_state() {
+        let trans_probs = TransitionProbs::from_fn(|event| match event {
+            Event::SendNormal => Some((3, 0.0).into()),
+            Event::ReceiveNormal => None,
+        })
+        .unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), Action::SendDecoy),
+                State::new(None, Action::SendDecoy),
+            ],
+            42,
+        );
+
+        match machine {
+            Err(ValidationError::TransitionToInvalidState(state)) => {
+                assert!(state[0] == 3usize, "unexpected invalid state: {state:?}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 }
