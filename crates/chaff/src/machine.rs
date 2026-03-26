@@ -24,7 +24,7 @@ impl Machine {
         let invalid_transitions = states
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
-            .flat_map(|probs| probs.0.iter().flatten())
+            .flat_map(|probs| probs.0.values())
             .map(|trans| trans.index)
             .filter(|&index| index > num_states)
             .collect::<Vec<_>>();
@@ -76,22 +76,21 @@ impl MachineRuntime {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use crate::{event::Event, framework::Framework, state::TransitionProbs};
+    use crate::{
+        action::IntegratorAction, event::Event, framework::Framework, state::TransitionProbs,
+    };
 
     use super::*;
 
     #[test]
     fn test_queues_correct_len() {
-        let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.0).try_into().unwrap()),
-            Event::ReceiveNormal => None,
-        })
-        .unwrap();
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Action::SendDecoy),
-                State::new(None, Action::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, IntegratorAction::SendDecoy.into()),
             ],
             42,
         )
@@ -111,28 +110,25 @@ mod tests {
         let now = Instant::now();
 
         framework.runtime.queues[0].push(TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: now,
         });
 
         let actions = framework.pop_queues(now);
 
         assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0], Action::SendDecoy);
+        assert_eq!(actions[0], IntegratorAction::SendDecoy.into());
     }
 
     #[test]
     fn test_validate_invalid_state() {
-        let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((3, 0.0).try_into().unwrap()),
-            Event::ReceiveNormal => None,
-        })
-        .unwrap();
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (3, 0.0).try_into().unwrap())]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Action::SendDecoy),
-                State::new(None, Action::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, IntegratorAction::SendDecoy.into()),
             ],
             42,
         );

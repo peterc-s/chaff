@@ -31,8 +31,13 @@ impl<R: Rng> Framework<R> {
         }
     }
 
-    fn get_trans_probs(&self) -> Option<TransitionProbs> {
-        self.machine.states.get(self.runtime.state)?.trans_probs
+    /// Get the [`TransitionProbs`] of the current state as a reference.
+    pub fn get_trans_probs(&self) -> Option<&TransitionProbs> {
+        self.machine
+            .states
+            .get(self.runtime.state)?
+            .trans_probs
+            .as_ref()
     }
 
     /// "Trigger" a slice of events, returns actions the integrator must take.
@@ -40,16 +45,20 @@ impl<R: Rng> Framework<R> {
         let mut resulting_actions = vec![];
 
         for event in events {
-            if let Some(trans_probs) = self.get_trans_probs() {
-                if let Some(new_state) = trans_probs.trigger(&mut self.rng, *event) {
-                    self.runtime.state = new_state;
+            if let Some(new_state) = self
+                .machine
+                .states
+                .get(self.runtime.state)
+                .and_then(|state| state.trans_probs.as_ref())
+                .and_then(|trans_probs| trans_probs.trigger(&mut self.rng, *event))
+            {
+                self.runtime.state = new_state;
 
-                    // the indexing here should be safe as we validate transitions in
-                    // Machine::new().
-                    let resulting_action = self.machine.states[new_state].action;
+                // the indexing here should be safe as we validate transitions in
+                // Machine::new().
+                let resulting_action = self.machine.states[new_state].action;
 
-                    resulting_actions.push(resulting_action);
-                }
+                resulting_actions.push(resulting_action);
             }
         }
 
@@ -86,7 +95,7 @@ impl<R: Rng> Framework<R> {
 mod tests {
     use super::*;
     use crate::{
-        action::Action,
+        action::IntegratorAction,
         event::Event,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -94,43 +103,43 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs() {
-        let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.5).try_into().unwrap()),
-            Event::ReceiveNormal => None,
-        })
-        .unwrap();
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Action::SendDecoy),
-                State::new(None, Action::SendDecoy),
+                State::new(
+                    Some(trans_probs.clone()),
+                    IntegratorAction::SendDecoy.into(),
+                ),
+                State::new(None, IntegratorAction::SendDecoy.into()),
             ],
             0,
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
-        assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
+        assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
     }
 
     #[test]
     fn test_trigger_and_get_trans_probs() {
-        let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 1.0).try_into().unwrap()),
-            Event::ReceiveNormal => None,
-        })
-        .unwrap();
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Action::SendDecoy),
-                State::new(None, Action::SendDecoy),
+                State::new(
+                    Some(trans_probs.clone()),
+                    IntegratorAction::SendDecoy.into(),
+                ),
+                State::new(None, IntegratorAction::SendDecoy.into()),
             ],
             0,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
-        assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
+        assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
 
         framework.trigger_events(&[Event::SendNormal]);
@@ -141,33 +150,37 @@ mod tests {
 
     #[test]
     fn test_trigger_with_0_trans_probs() {
-        let trans_probs = TransitionProbs::from_fn(|event| match event {
-            Event::SendNormal => Some((1, 0.0).try_into().unwrap()),
-            Event::ReceiveNormal => None,
-        })
-        .unwrap();
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Action::SendDecoy),
-                State::new(None, Action::SendDecoy),
+                State::new(
+                    Some(trans_probs.clone()),
+                    IntegratorAction::SendDecoy.into(),
+                ),
+                State::new(None, IntegratorAction::SendDecoy.into()),
             ],
             0,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
-        assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
+        assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
 
         framework.trigger_events(&[Event::SendNormal]);
 
-        assert_eq!(framework.get_trans_probs().unwrap(), trans_probs);
+        assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
     }
 
     #[test]
     fn test_get_trans_probs_invalid_state() {
-        let machine = Machine::new(vec![State::new(None, Action::SendDecoy)], 0).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy.into())],
+            0,
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         // force bad behaviour
