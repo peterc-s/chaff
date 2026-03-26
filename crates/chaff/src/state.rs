@@ -68,7 +68,7 @@ impl TransitionProbs {
     /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
     ///
     /// let trans_probs = TransitionProbs::from_fn(|event| match event {
-    ///     Event::SendNormal => Some((1, 0.5).into()), // transition to state 1 with probability 0.5
+    ///     Event::SendNormal => Some((1, 0.5).try_into().unwrap()), // transition to state 1 with probability 0.5
     ///     Event::ReceiveNormal => None,
     /// }).unwrap();
     ///
