@@ -60,6 +60,15 @@ impl SimulatorQueue {
         }
     }
 
+    /// Peeks the soonest time in either the ingress or egress queue.
+    pub fn peek_soonest_time(&self) -> Option<u64> {
+        match (self.ingress.peek(), self.egress.peek()) {
+            (None, None) => None,
+            (None, Some(e)) | (Some(e), None) => Some(e.time),
+            (Some(i), Some(e)) => Some(i.time.min(e.time)),
+        }
+    }
+
     /// Push an event to the [`SimulatorQueue`].
     ///
     /// [`Event::SendNormal`]s go on the egress queue.
@@ -138,19 +147,23 @@ impl<R: Rng> Simulator<R> {
         let base_instant = Instant::now();
         let mut last_event_ts = 0;
 
-        while let Some(event) = self.queue.pop_soonest() {
-            let sim_now = event.time;
-
+        loop {
             if let Some(until) = blocking_until {
-                if sim_now >= until {
+                if self.queue.peek_soonest_time().is_none_or(|t| until <= t) {
                     blocking_until = None;
                     while let Some(mut blocked) = blocked_events.pop() {
-                        blocked.time = sim_now;
+                        blocked.time = until;
                         self.queue.push(blocked);
                     }
+                    continue;
                 }
             }
 
+            let Some(event) = self.queue.pop_soonest() else {
+                break;
+            };
+
+            let sim_now = event.time;
             if event.event == Event::SendNormal && blocking_until.is_some() {
                 blocked_events.push(event);
                 continue;
@@ -366,6 +379,6 @@ mod tests {
         assert_eq!(out.directions.len(), 3);
         assert_eq!(out.timing_deltas[0], 0);
         assert_eq!(out.timing_deltas[1], 50); // released after time elapsed.
-        assert_eq!(out.timing_deltas[2], 60);
+        assert_eq!(out.timing_deltas[2], 10);
     }
 }
