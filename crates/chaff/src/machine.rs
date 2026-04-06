@@ -5,6 +5,7 @@ use std::{borrow::Borrow, time::Instant};
 use crate::{
     action::{Action, FrameworkAction},
     errors::ValidationError,
+    event::Event,
     queue::{TimedAction, TimedQueue},
     state::State,
 };
@@ -93,6 +94,9 @@ pub struct MachineRuntime {
 
     /// Vector of priority queues corresponding to [`Machine::queues`].
     pub(crate) queues: Vec<TimedQueue<TimedAction>>,
+
+    /// Events deferred to the next [`crate::framework::Framework`] tick.
+    pub(crate) deferred_events: Vec<Event>,
 }
 
 impl MachineRuntime {
@@ -100,22 +104,27 @@ impl MachineRuntime {
     pub fn new<M: Borrow<Machine>>(machine: M) -> Self {
         let m = machine.borrow();
         let queues = (0..m.queues).map(|_| TimedQueue::new()).collect();
-        Self { state: 0, queues }
+        Self {
+            state: 0,
+            queues,
+            deferred_events: vec![],
+        }
     }
 
     /// Pops the action [`TimedQueues`].
-    pub fn pop_queues(&mut self, now: Instant) -> Box<[Action]> {
+    pub fn pop_queues(&mut self, now: Instant) -> Box<[(u8, Action)]> {
         let mut actions = Vec::new();
 
-        for queue in &mut self.queues {
-            actions.extend(queue.pop_ready(now));
+        for (idx, queue) in &mut self.queues.iter_mut().enumerate() {
+            actions.extend(
+                queue
+                    .pop_ready(now)
+                    .iter()
+                    .map(|timed_action| (idx as u8, timed_action.action)),
+            );
         }
 
-        actions
-            .iter()
-            .map(|timed_action| timed_action.action)
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
+        actions.into_boxed_slice()
     }
 }
 
