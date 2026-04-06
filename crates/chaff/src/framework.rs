@@ -68,6 +68,7 @@ impl<R: Rng> Framework<R> {
     /// processing events or popping queues will be taken by the [`Framework`] before returning.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
         let mut integrator_actions = vec![];
+        let mut framework_actions = vec![];
 
         // handle events
         for event in events {
@@ -82,7 +83,7 @@ impl<R: Rng> Framework<R> {
 
                 match self.machine.states[new_state].action {
                     Action::Framework(framework_action) => {
-                        self.perform_action(framework_action, now);
+                        framework_actions.push(framework_action);
                     }
                     Action::Integrator(integrator_action) => {
                         integrator_actions.push(integrator_action);
@@ -96,11 +97,18 @@ impl<R: Rng> Framework<R> {
             .pop_queues(now)
             .iter()
             .for_each(|action| match action {
-                Action::Framework(framework_action) => self.perform_action(*framework_action, now),
+                Action::Framework(framework_action) => {
+                    framework_actions.push(*framework_action);
+                }
                 Action::Integrator(integrator_action) => {
                     integrator_actions.push(*integrator_action);
                 }
             });
+
+        // perform framework actions
+        for action in framework_actions {
+            self.perform_action(action, now);
+        }
 
         integrator_actions.into_boxed_slice()
     }
@@ -448,5 +456,41 @@ mod tests {
             !framework.runtime.queues[1].is_empty(),
             "other queues should not have been affected"
         );
+    }
+
+    #[test]
+    fn test_perform_action_schedule_via_queue() {
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy.into())],
+            2,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+
+        framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: FrameworkAction::Schedule {
+                action: IntegratorAction::SendDecoy,
+                queue: 1,
+                delay: Duration::ZERO,
+            }
+            .into(),
+        });
+
+        // queues should get popped, schedule action should be processed as it
+        // was already on the queue at this instant
+        let actions = framework.process(&[], now);
+
+        assert!(actions.is_empty());
+
+        // now we can process again (with the same now) which should pop the
+        // scheduled action
+        let actions = framework.process(&[], now);
+
+        assert!(!actions.is_empty());
+        assert_eq!(actions[0], IntegratorAction::SendDecoy);
     }
 }
