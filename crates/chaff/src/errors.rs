@@ -34,6 +34,13 @@ pub enum ValidationError {
 
     /// A [`crate::state::Transition`] leads to an out-of-range/non-existent state.
     TransitionToInvalidState(Box<[usize]>),
+
+    /// a [`crate::state::State`] has an associated [`crate::action::Action`] which would try use a
+    /// queue that doesn't exist.
+    InvalidStateActionQueue(Box<[u8]>),
+
+    /// Multiple [`ValidationError`]s exist.
+    Multiple(Box<[Self]>),
 }
 
 impl Error for ValidationError {
@@ -51,6 +58,19 @@ impl fmt::Display for ValidationError {
             ),
             Self::TransitionToInvalidState(states) => {
                 write!(f, "transition to an invalid state(s) {states:?}")
+            }
+            Self::InvalidStateActionQueue(queues) => write!(
+                f,
+                "state(s) contains action(s) which would attempt to use queue(s) that doesn't exist: {queues:?}"
+            ),
+            Self::Multiple(errors) => {
+                writeln!(f, "multiple errors:")?;
+
+                for (idx, error) in errors.iter().enumerate() {
+                    writeln!(f, "  {}. {}", idx + 1, error)?;
+                }
+
+                Ok(())
             }
         }
     }

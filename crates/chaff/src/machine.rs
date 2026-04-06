@@ -3,7 +3,7 @@
 use std::{borrow::Borrow, time::Instant};
 
 use crate::{
-    action::Action,
+    action::{Action, FrameworkAction},
     errors::ValidationError,
     queue::{TimedAction, TimedQueue},
     state::State,
@@ -18,9 +18,18 @@ pub struct Machine {
 
 impl Machine {
     /// Create a new [`Machine`] with the given states.
+    ///
+    /// # Panics
+    ///
+    /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
+    /// which should be safe because of a prior bounds check.
     pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
         // find transitions with indices exceeding the number of states
         let num_states = states.len();
+
+        let mut validation_errors = vec![];
+
+        // TODO: move validation into separate private method and call
         let invalid_transitions = states
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
@@ -29,12 +38,43 @@ impl Machine {
             .filter(|&index| index > num_states)
             .collect::<Vec<_>>();
 
-        if invalid_transitions.is_empty() {
-            Ok(Self { states, queues })
-        } else {
-            Err(ValidationError::TransitionToInvalidState(
+        if !invalid_transitions.is_empty() {
+            validation_errors.push(ValidationError::TransitionToInvalidState(
                 invalid_transitions.into_boxed_slice(),
-            ))
+            ));
+        }
+
+        let invalid_state_action_queues = states
+            .iter()
+            .map(|state| state.action)
+            .filter_map(|action| match action {
+                Action::Framework(framework_action) => match framework_action {
+                    FrameworkAction::Schedule { queue, .. }
+                    | FrameworkAction::CancelQueue(queue)
+                        if queue > queues =>
+                    {
+                        Some(queue)
+                    }
+                    _ => None,
+                },
+                Action::Integrator(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        if !invalid_state_action_queues.is_empty() {
+            validation_errors.push(ValidationError::InvalidStateActionQueue(
+                invalid_state_action_queues.into_boxed_slice(),
+            ));
+        }
+
+        #[expect(clippy::expect_used)]
+        match validation_errors.len() {
+            0 => Ok(Self { states, queues }),
+            // SAFETY: expect here is okay as the length matching means we must have at least one error.
+            1 => Err(validation_errors.pop().expect("no errors when popping")),
+            _ => Err(ValidationError::Multiple(
+                validation_errors.into_boxed_slice(),
+            )),
         }
     }
 }
