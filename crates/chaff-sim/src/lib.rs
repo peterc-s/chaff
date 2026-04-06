@@ -121,9 +121,7 @@ impl<R: Rng> Simulator<R> {
         while let Some(event) = self.queue.pop_soonest() {
             let now = Instant::now();
             // FIXME: unused for now
-            let _ = self
-                .framework
-                .trigger_events_and_pop_queues(&[event.event], now);
+            let _ = self.framework.process(&[event.event], now);
 
             match event.event {
                 Event::SendNormal => directions.push(Direction::Send),

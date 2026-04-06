@@ -162,10 +162,10 @@ mod tests {
             execute_at: now,
         });
 
-        let actions = framework.pop_queues(now);
+        let actions = framework.process(&[], now);
 
         assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0], IntegratorAction::SendDecoy.into());
+        assert_eq!(actions[0], IntegratorAction::SendDecoy);
     }
 
     #[test]

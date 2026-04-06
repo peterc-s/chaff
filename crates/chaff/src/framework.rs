@@ -6,9 +6,10 @@ use std::time::Instant;
 use rand::Rng;
 
 use crate::{
-    action::Action,
+    action::{Action, FrameworkAction, IntegratorAction},
     event::Event,
     machine::{Machine, MachineRuntime},
+    queue::{TimedAction, TimedQueue},
     state::TransitionProbs,
 };
 
@@ -43,10 +44,32 @@ impl<R: Rng> Framework<R> {
             .as_ref()
     }
 
-    /// "Trigger" a slice of events, returns actions the integrator must take.
-    pub fn trigger_events(&mut self, events: &[Event]) -> Box<[Action]> {
-        let mut resulting_actions = vec![];
+    /// Perform the given [`FrameworkAction`].
+    fn perform_action(&mut self, action: FrameworkAction, now: Instant) {
+        match action {
+            FrameworkAction::Schedule {
+                action,
+                queue,
+                delay,
+            } => self.runtime.queues[queue as usize].push(TimedAction {
+                execute_at: now + delay,
+                action: action.into(),
+            }),
+            FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),
+            FrameworkAction::CancelAll => {
+                self.runtime.queues.iter_mut().for_each(TimedQueue::cancel);
+            }
+        }
+    }
 
+    /// Process batch of events and pops scheduled actions off [`MachineRuntime`] queues in that order.
+    ///
+    /// Returns only [`IntegratorAction`]s, any [`crate::action::FrameworkAction`]s resulting from
+    /// processing events or popping queues will be taken by the [`Framework`] before returning.
+    pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
+        let mut integrator_actions = vec![];
+
+        // handle events
         for event in events {
             if let Some(new_state) = self
                 .machine
@@ -57,34 +80,29 @@ impl<R: Rng> Framework<R> {
             {
                 self.runtime.state = new_state;
 
-                // the indexing here should be safe as we validate transitions in
-                // Machine::new().
-                let resulting_action = self.machine.states[new_state].action;
-
-                resulting_actions.push(resulting_action);
+                match self.machine.states[new_state].action {
+                    Action::Framework(framework_action) => {
+                        self.perform_action(framework_action, now);
+                    }
+                    Action::Integrator(integrator_action) => {
+                        integrator_actions.push(integrator_action);
+                    }
+                }
             }
         }
 
-        resulting_actions.into_boxed_slice()
-    }
+        // pop queues
+        self.runtime
+            .pop_queues(now)
+            .iter()
+            .for_each(|action| match action {
+                Action::Framework(framework_action) => self.perform_action(*framework_action, now),
+                Action::Integrator(integrator_action) => {
+                    integrator_actions.push(*integrator_action);
+                }
+            });
 
-    /// Pops the [`MachineRuntime`]'s action queues giving a list of actions that the integrator
-    /// must take.
-    pub fn pop_queues(&mut self, now: Instant) -> Box<[Action]> {
-        self.runtime.pop_queues(now)
-    }
-
-    /// First pops the queues with [`Framework::pop_queues()`], then triggers the given events with [`Framework::trigger_events()`],
-    /// returning the concatenation of the resulting [`Box<T>`]'s of [`Action`] slices.
-    pub fn trigger_events_and_pop_queues(
-        &mut self,
-        events: &[Event],
-        now: Instant,
-    ) -> Box<[Action]> {
-        self.pop_queues(now)
-            .into_iter()
-            .chain(self.trigger_events(events))
-            .collect()
+        integrator_actions.into_boxed_slice()
     }
 
     /// Get the current state of the frameworks machine.
@@ -95,7 +113,10 @@ impl<R: Rng> Framework<R> {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{
         action::{FrameworkAction, IntegratorAction},
@@ -145,7 +166,7 @@ mod tests {
         assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
 
-        framework.trigger_events(&[Event::SendNormal]);
+        framework.process(&[Event::SendNormal], Instant::now());
 
         assert!(framework.get_trans_probs().is_none());
         assert_eq!(framework.get_state(), 1);
@@ -171,7 +192,7 @@ mod tests {
         assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
 
-        framework.trigger_events(&[Event::SendNormal]);
+        framework.process(&[Event::SendNormal], Instant::now());
 
         assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
@@ -222,9 +243,210 @@ mod tests {
 
         let mut framework = Framework::new(machine, rand::rng());
 
-        let actions = framework.trigger_events(&[Event::ReceiveNormal]);
+        let actions = framework.process(&[Event::ReceiveNormal], Instant::now());
 
         assert!(actions.is_empty());
         assert_eq!(framework.get_state(), 0);
+    }
+
+    #[test]
+    fn test_perform_action_cancel_all() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, FrameworkAction::CancelAll.into()),
+            ],
+            2,
+        )
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let far_future = Instant::now() + std::time::Duration::from_secs(9999);
+        for queue in &mut framework.runtime.queues {
+            queue.push(TimedAction {
+                execute_at: far_future,
+                action: IntegratorAction::SendDecoy.into(),
+            });
+        }
+
+        framework.process(&[Event::SendNormal], Instant::now());
+
+        for queue in &framework.runtime.queues {
+            assert!(queue.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_perform_action_cancel_queue() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, FrameworkAction::CancelQueue(0).into()),
+            ],
+            2,
+        )
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let far_future = Instant::now() + std::time::Duration::from_secs(999);
+        for queue in &mut framework.runtime.queues {
+            queue.push(TimedAction {
+                execute_at: far_future,
+                action: IntegratorAction::SendDecoy.into(),
+            });
+        }
+
+        framework.process(&[Event::SendNormal], Instant::now());
+
+        assert!(
+            framework.runtime.queues[0].is_empty(),
+            "queue 0 should have been cancelled"
+        );
+
+        assert!(
+            !framework.runtime.queues[1].is_empty(),
+            "other queues should not have been affected"
+        );
+    }
+
+    #[test]
+    fn test_perform_action_schedule() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::ReleaseBlock.into()),
+                State::new(
+                    None,
+                    FrameworkAction::Schedule {
+                        action: IntegratorAction::SendDecoy,
+                        queue: 0,
+                        delay: Duration::from_secs(999),
+                    }
+                    .into(),
+                ),
+            ],
+            1,
+        )
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let actions = framework.process(&[Event::SendNormal], Instant::now());
+
+        assert!(actions.is_empty());
+
+        let queued = framework.runtime.queues[0]
+            .queue
+            .pop()
+            .expect("expected something to be queued.");
+
+        assert_eq!(queued.0.action, IntegratorAction::SendDecoy.into());
+    }
+
+    #[test]
+    fn test_perform_action_schedule_far_doesnt_pop() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(
+                    None,
+                    FrameworkAction::Schedule {
+                        action: IntegratorAction::SendDecoy,
+                        queue: 0,
+                        delay: Duration::from_secs(999),
+                    }
+                    .into(),
+                ),
+            ],
+            1,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let actions = framework.process(&[Event::SendNormal], Instant::now());
+
+        assert!(
+            !actions.contains(&IntegratorAction::SendDecoy),
+            "far future action should not fire yet"
+        );
+        assert!(
+            !framework.runtime.queues[0].is_empty(),
+            "action should still be sitting in the queue"
+        );
+    }
+
+    #[test]
+    fn test_perform_action_cancel_all_via_queue() {
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy.into())],
+            3,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: FrameworkAction::CancelAll.into(),
+        });
+
+        let far_future = now + Duration::from_secs(999);
+        for queue in &mut framework.runtime.queues[1..] {
+            queue.push(TimedAction {
+                execute_at: far_future,
+                action: IntegratorAction::SendDecoy.into(),
+            });
+        }
+
+        framework.process(&[], now);
+
+        for queue in &framework.runtime.queues {
+            assert!(queue.is_empty(), "queues should have been cancelled");
+        }
+    }
+
+    #[test]
+    fn test_perform_action_cancel_queue_via_queue() {
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy.into())],
+            2,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: FrameworkAction::CancelQueue(0).into(),
+        });
+
+        let far_future = now + Duration::from_secs(9999);
+        framework.runtime.queues[1].push(TimedAction {
+            execute_at: far_future,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        framework.process(&[], now);
+
+        assert!(
+            framework.runtime.queues[0].is_empty(),
+            "queue 0 should have been cancelled"
+        );
+
+        assert!(
+            !framework.runtime.queues[1].is_empty(),
+            "other queues should not have been affected"
+        );
     }
 }

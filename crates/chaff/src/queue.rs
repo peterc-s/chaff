@@ -51,7 +51,7 @@ impl Timed for TimedAction {
 
 #[derive(Debug, Clone, Default)]
 pub struct TimedQueue<T: Timed> {
-    queue: BinaryHeap<Scheduled<T>>,
+    pub(crate) queue: BinaryHeap<Scheduled<T>>,
 }
 
 impl<T: Timed> TimedQueue<T> {
@@ -75,6 +75,14 @@ impl<T: Timed> TimedQueue<T> {
         }
 
         ready.into_boxed_slice()
+    }
+
+    pub fn cancel(&mut self) {
+        self.queue.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
     }
 }
 
