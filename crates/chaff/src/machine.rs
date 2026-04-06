@@ -116,6 +116,8 @@ impl MachineRuntime {
         let mut actions = Vec::new();
 
         for (idx, queue) in &mut self.queues.iter_mut().enumerate() {
+            // number of queues are always in the u8 range.
+            #[expect(clippy::cast_possible_truncation)]
             actions.extend(
                 queue
                     .pop_ready(now)
