@@ -17,19 +17,19 @@ pub struct Machine {
 }
 
 impl Machine {
-    /// Create a new [`Machine`] with the given states.
+    /// Validates given states and number of queues:
+    /// - Transitions must not go to invalid states.
+    /// - State actions must not interact with non-existent queues.
     ///
     /// # Panics
     ///
     /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
     /// which should be safe because of a prior bounds check.
-    pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
-        // find transitions with indices exceeding the number of states
+    fn validate(states: &[State], queues: u8) -> Result<(), ValidationError> {
+        let mut errors = vec![];
         let num_states = states.len();
 
-        let mut validation_errors = vec![];
-
-        // TODO: move validation into separate private method and call
+        // check for transitions to invalid states
         let invalid_transitions = states
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
@@ -39,11 +39,13 @@ impl Machine {
             .collect::<Vec<_>>();
 
         if !invalid_transitions.is_empty() {
-            validation_errors.push(ValidationError::TransitionToInvalidState(
+            errors.push(ValidationError::TransitionToInvalidState(
                 invalid_transitions.into_boxed_slice(),
             ));
         }
 
+        // check for state actions which would try to interact with
+        // non-existent queues
         let invalid_state_action_queues = states
             .iter()
             .map(|state| state.action)
@@ -62,20 +64,24 @@ impl Machine {
             .collect::<Vec<_>>();
 
         if !invalid_state_action_queues.is_empty() {
-            validation_errors.push(ValidationError::InvalidStateActionQueue(
+            errors.push(ValidationError::InvalidStateActionQueue(
                 invalid_state_action_queues.into_boxed_slice(),
             ));
         }
 
         #[expect(clippy::expect_used)]
-        match validation_errors.len() {
-            0 => Ok(Self { states, queues }),
+        match errors.len() {
+            0 => Ok(()),
             // SAFETY: expect here is okay as the length matching means we must have at least one error.
-            1 => Err(validation_errors.pop().expect("no errors when popping")),
-            _ => Err(ValidationError::Multiple(
-                validation_errors.into_boxed_slice(),
-            )),
+            1 => Err(errors.pop().expect("no errors when popping")),
+            _ => Err(ValidationError::Multiple(errors.into_boxed_slice())),
         }
+    }
+
+    /// Create a new [`Machine`] with the given states.
+    pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
+        Self::validate(&states, queues)?;
+        Ok(Self { states, queues })
     }
 }
 
