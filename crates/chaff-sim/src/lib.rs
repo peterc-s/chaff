@@ -1,7 +1,7 @@
 //! The Chaff simulator for creating defended traces with machines.
 use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
-use chaff::{event::Event, framework::Framework};
+use chaff::{action::IntegratorAction, event::Event, framework::Framework};
 use chaff_capture::trace::{Direction, Trace, TracePacket};
 use rand::Rng;
 
@@ -55,6 +55,18 @@ impl SimulatorQueue {
             }
         }
     }
+
+    /// Push an event to the [`SimulatorQueue`].
+    ///
+    /// [`Event::SendNormal`]s go on the egress queue.
+    /// [`Event::ReceiveNormal`]s go on the ingress queue.
+    pub fn push(&mut self, event: SimulatorEvent) {
+        match event.event {
+            Event::SendNormal => self.egress.push(event),
+            Event::ReceiveNormal => self.ingress.push(event),
+            Event::QueuePopped(_) => {}
+        }
+    }
 }
 
 impl From<Trace> for SimulatorQueue {
@@ -94,6 +106,12 @@ pub struct Simulator<R: Rng> {
 
     /// The simulated queues, filled with a [`Trace`].
     queue: SimulatorQueue,
+
+    /// If blocking, when to unblock.
+    blocking_until: Option<Instant>,
+
+    /// Events that are currently blocked.
+    blocked_events: Vec<SimulatorEvent>,
 }
 
 impl<R: Rng> Simulator<R> {
@@ -104,6 +122,8 @@ impl<R: Rng> Simulator<R> {
             framework,
             trace,
             queue: SimulatorQueue::default(),
+            blocking_until: None,
+            blocked_events: vec![],
         }
     }
 
@@ -120,8 +140,18 @@ impl<R: Rng> Simulator<R> {
         let mut last_event_ts = 0;
         while let Some(event) = self.queue.pop_soonest() {
             let now = Instant::now();
-            // FIXME: unused for now
-            let _ = self.framework.process(&[event.event], now);
+
+            if event.event == Event::SendNormal {
+                if let Some(block_time) = self.blocking_until {
+                    if now < block_time {
+                        self.blocked_events.push(event);
+                        continue;
+                    }
+                    self.blocking_until = None;
+                }
+            }
+
+            let actions = self.framework.process(&[event.event], now);
 
             match event.event {
                 Event::SendNormal => directions.push(Direction::Send),
@@ -130,13 +160,40 @@ impl<R: Rng> Simulator<R> {
             }
             timing_deltas.push(event.time - last_event_ts);
             sizes.push(event.size);
-
             last_event_ts = event.time;
+
+            for action in actions {
+                match action {
+                    IntegratorAction::SendDecoy => {
+                        if let Some(block_time) = self.blocking_until {
+                            if now < block_time {
+                                self.blocked_events.push(SimulatorEvent {
+                                    event: Event::SendNormal,
+                                    time: last_event_ts,
+                                    size: 512,
+                                });
+                            } else {
+                                self.blocking_until = None;
+                                directions.push(Direction::Send);
+                            }
+                        }
+                    }
+                    IntegratorAction::BlockOutgoing(duration) => {
+                        self.blocking_until = Some(now + duration);
+                    }
+                    IntegratorAction::ReleaseBlock => {
+                        self.blocking_until = None;
+                        while let Some(mut blocked_event) = self.blocked_events.pop() {
+                            blocked_event.time = last_event_ts;
+                            self.queue.push(blocked_event);
+                        }
+                    }
+                }
+            }
         }
 
         // event.time is u64 because it is absolute, the deltas are differences and
-        // should fall in the trace u32.
-        // TODO: if this becomes a problem, handle it properly.
+        // should fall in the trace u32. if this becomes a problem, this may change.
         #[expect(clippy::cast_possible_truncation)]
         Trace {
             directions: directions.into(),
