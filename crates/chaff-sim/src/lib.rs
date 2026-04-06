@@ -1,5 +1,9 @@
 //! The Chaff simulator for creating defended traces with machines.
-use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
+use std::{
+    cmp::Ordering,
+    collections::BinaryHeap,
+    time::{Duration, Instant},
+};
 
 use chaff::{action::IntegratorAction, event::Event, framework::Framework};
 use chaff_capture::trace::{Direction, Trace, TracePacket};
@@ -106,12 +110,6 @@ pub struct Simulator<R: Rng> {
 
     /// The simulated queues, filled with a [`Trace`].
     queue: SimulatorQueue,
-
-    /// If blocking, when to unblock.
-    blocking_until: Option<Instant>,
-
-    /// Events that are currently blocked.
-    blocked_events: Vec<SimulatorEvent>,
 }
 
 impl<R: Rng> Simulator<R> {
@@ -122,8 +120,6 @@ impl<R: Rng> Simulator<R> {
             framework,
             trace,
             queue: SimulatorQueue::default(),
-            blocking_until: None,
-            blocked_events: vec![],
         }
     }
 
@@ -131,61 +127,66 @@ impl<R: Rng> Simulator<R> {
     pub fn run(&mut self) -> Trace {
         let trace_len = self.trace.len();
         self.queue = SimulatorQueue::from(self.trace.clone());
+        let mut blocking_until: Option<u64> = None;
+        let mut blocked_events: Vec<SimulatorEvent> = vec![];
 
         // for output trace
         let mut directions: Vec<Direction> = Vec::with_capacity(trace_len);
         let mut timing_deltas = Vec::with_capacity(trace_len);
         let mut sizes = Vec::with_capacity(trace_len);
 
+        let base_instant = Instant::now();
         let mut last_event_ts = 0;
-        while let Some(event) = self.queue.pop_soonest() {
-            let now = Instant::now();
 
-            if event.event == Event::SendNormal {
-                if let Some(block_time) = self.blocking_until {
-                    if now < block_time {
-                        self.blocked_events.push(event);
-                        continue;
-                    }
-                    self.blocking_until = None;
+        while let Some(event) = self.queue.pop_soonest() {
+            let sim_now = event.time;
+
+            if let Some(until) = blocking_until {
+                if sim_now >= until {
+                    blocking_until = None;
                 }
             }
 
-            let actions = self.framework.process(&[event.event], now);
-
-            match event.event {
-                Event::SendNormal => directions.push(Direction::Send),
-                Event::ReceiveNormal => directions.push(Direction::Receive),
-                Event::QueuePopped(_) => {}
+            if event.event == Event::SendNormal && blocking_until.is_some() {
+                blocked_events.push(event);
+                continue;
             }
-            timing_deltas.push(event.time - last_event_ts);
-            sizes.push(event.size);
-            last_event_ts = event.time;
+
+            let sim_instant = base_instant + Duration::from_micros(sim_now);
+            let actions = self.framework.process(&[event.event], sim_instant);
+
+            if !matches!(event.event, Event::QueuePopped(_)) {
+                directions.push(if event.event == Event::SendNormal {
+                    Direction::Send
+                } else {
+                    Direction::Receive
+                });
+                timing_deltas.push(sim_now - last_event_ts);
+                sizes.push(event.size);
+                last_event_ts = sim_now;
+            }
 
             for action in actions {
                 match action {
                     IntegratorAction::SendDecoy => {
-                        if let Some(block_time) = self.blocking_until {
-                            if now < block_time {
-                                self.blocked_events.push(SimulatorEvent {
-                                    event: Event::SendNormal,
-                                    time: last_event_ts,
-                                    size: 512,
-                                });
-                            } else {
-                                self.blocking_until = None;
-                                directions.push(Direction::Send);
-                            }
-                        }
+                        self.queue.push(SimulatorEvent {
+                            event: Event::SendNormal,
+                            time: sim_now,
+                            size: 512,
+                        });
                     }
                     IntegratorAction::BlockOutgoing(duration) => {
-                        self.blocking_until = Some(now + duration);
+                        // rust duration micros are u128. change sim to u128 if
+                        // this becomes an issue.
+                        #[expect(clippy::cast_possible_truncation)]
+                        let end_ts = sim_now + duration.as_micros() as u64;
+                        blocking_until = Some(end_ts);
                     }
                     IntegratorAction::ReleaseBlock => {
-                        self.blocking_until = None;
-                        while let Some(mut blocked_event) = self.blocked_events.pop() {
-                            blocked_event.time = last_event_ts;
-                            self.queue.push(blocked_event);
+                        blocking_until = None;
+                        while let Some(mut blocked) = blocked_events.pop() {
+                            blocked.time = sim_now;
+                            self.queue.push(blocked);
                         }
                     }
                 }
