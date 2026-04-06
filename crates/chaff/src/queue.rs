@@ -51,7 +51,7 @@ impl Timed for TimedAction {
 
 #[derive(Debug, Clone, Default)]
 pub struct TimedQueue<T: Timed> {
-    queue: BinaryHeap<Scheduled<T>>,
+    pub(crate) queue: BinaryHeap<Scheduled<T>>,
 }
 
 impl<T: Timed> TimedQueue<T> {
@@ -76,6 +76,14 @@ impl<T: Timed> TimedQueue<T> {
 
         ready.into_boxed_slice()
     }
+
+    pub fn cancel(&mut self) {
+        self.queue.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -83,13 +91,15 @@ impl<T: Timed> TimedQueue<T> {
 mod tests {
     use std::time::Duration;
 
+    use crate::action::IntegratorAction;
+
     use super::*;
 
     #[test]
     fn test_scheduled_eq() {
         let now = Instant::now();
         let timed_action = TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: now,
         };
 
@@ -101,7 +111,7 @@ mod tests {
         // TODO: can `Scheduled` defer to the inner's eq?
 
         let timed_action = TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: now + Duration::from_secs(1),
         };
 
@@ -117,11 +127,11 @@ mod tests {
         let later = now + Duration::from_secs(10);
 
         let scheduled_soon = Scheduled(TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: soon,
         });
         let scheduled_later = Scheduled(TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: later,
         });
 
@@ -146,11 +156,11 @@ mod tests {
         let mut heap = BinaryHeap::new();
 
         heap.push(Scheduled(TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: latest,
         }));
         heap.push(Scheduled(TimedAction {
-            action: Action::SendDecoy,
+            action: IntegratorAction::SendDecoy.into(),
             execute_at: earliest,
         }));
 

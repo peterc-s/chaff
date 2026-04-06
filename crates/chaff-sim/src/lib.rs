@@ -113,7 +113,7 @@ impl<R: Rng> Simulator<R> {
         self.queue = SimulatorQueue::from(self.trace.clone());
 
         // for output trace
-        let mut directions = Vec::with_capacity(trace_len);
+        let mut directions: Vec<Direction> = Vec::with_capacity(trace_len);
         let mut timing_deltas = Vec::with_capacity(trace_len);
         let mut sizes = Vec::with_capacity(trace_len);
 
@@ -121,14 +121,13 @@ impl<R: Rng> Simulator<R> {
         while let Some(event) = self.queue.pop_soonest() {
             let now = Instant::now();
             // FIXME: unused for now
-            let _ = self
-                .framework
-                .trigger_events_and_pop_queues(&[event.event], now);
+            let _ = self.framework.process(&[event.event], now);
 
-            directions.push(match event.event {
-                Event::SendNormal => Direction::Send,
-                Event::ReceiveNormal => Direction::Receive,
-            });
+            match event.event {
+                Event::SendNormal => directions.push(Direction::Send),
+                Event::ReceiveNormal => directions.push(Direction::Receive),
+                Event::QueuePopped(_) => {}
+            }
             timing_deltas.push(event.time - last_event_ts);
             sizes.push(event.size);
 

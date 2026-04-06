@@ -1,7 +1,10 @@
 //! Test machine used while developing the Chaff framework.
 
+// only used for testing and debugging.
+#![cfg(not(tarpaulin_include))]
+
 use chaff::{
-    action::Action,
+    action::{Action, IntegratorAction},
     event::Event,
     machine::Machine,
     state::{State, TransitionProbs},
@@ -15,16 +18,16 @@ use chaff::{
 #[expect(clippy::expect_used)]
 #[expect(clippy::unwrap_used)]
 pub fn construct_test_machine() -> Machine {
-    let trans_probs = TransitionProbs::from_fn(|event| match event {
-        Event::SendNormal => Some((1, 0.5).try_into().unwrap()),
-        Event::ReceiveNormal => None,
-    })
-    .expect("Transition probabilities are invalid.");
+    let trans_probs = TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())])
+        .expect("Transition probabilities are invalid.");
 
     Machine::new(
         vec![
-            State::new(Some(trans_probs), Action::SendDecoy),
-            State::new(None, Action::SendDecoy),
+            State::new(
+                Some(trans_probs),
+                Action::Integrator(IntegratorAction::SendDecoy),
+            ),
+            State::new(None, Action::Integrator(IntegratorAction::SendDecoy)),
         ],
         0,
     )
