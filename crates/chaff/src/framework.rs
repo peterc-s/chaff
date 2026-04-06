@@ -33,6 +33,9 @@ impl<R: Rng> Framework<R> {
 
     /// Get the [`TransitionProbs`] of the current state as a reference.
     pub fn get_trans_probs(&self) -> Option<&TransitionProbs> {
+        // tests do exist for this, but tarpaulin seemingly can't
+        // determine whether `.states` or `.trans_probs` are covered
+        #[cfg(not(tarpaulin_include))]
         self.machine
             .states
             .get(self.runtime.state)?
@@ -187,5 +190,41 @@ mod tests {
         framework.runtime.state = 999;
 
         assert!(framework.get_trans_probs().is_none());
+    }
+
+    #[test]
+    fn test_get_trans_probs_state_with_no_trans_probs() {
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy.into())],
+            0,
+        )
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        assert!(framework.get_trans_probs().is_none());
+        assert_eq!(framework.get_state(), 0);
+    }
+
+    #[test]
+    fn test_trigger_events_no_matching_event() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, IntegratorAction::SendDecoy.into()),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let actions = framework.trigger_events(&[Event::ReceiveNormal]);
+
+        assert!(actions.is_empty());
+        assert_eq!(framework.get_state(), 0);
     }
 }

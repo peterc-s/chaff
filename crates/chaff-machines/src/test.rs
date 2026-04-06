@@ -1,5 +1,8 @@
 //! Test machine used while developing the Chaff framework.
 
+// only used for testing and debugging.
+#![cfg(not(tarpaulin_include))]
+
 use chaff::{
     action::{Action, IntegratorAction},
     event::Event,
