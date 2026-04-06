@@ -64,14 +64,19 @@ impl<R: Rng> Framework<R> {
 
     /// Process batch of events and pops scheduled actions off [`MachineRuntime`] queues in that order.
     ///
+    /// If a call causes a queue to be popped, a [`Event::QueuePopped`] event will be added to the
+    /// [`MachineRuntime`]'s deferred events. The next time [`Framework::process`] is called, these
+    /// events will be triggered before the given events.
+    ///
     /// Returns only [`IntegratorAction`]s, any [`crate::action::FrameworkAction`]s resulting from
     /// processing events or popping queues will be taken by the [`Framework`] before returning.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
         let mut integrator_actions = vec![];
         let mut framework_actions = vec![];
+        let mut new_deferred_events = vec![];
 
         // handle events
-        for event in events {
+        for event in self.runtime.deferred_events.iter().chain(events) {
             if let Some(new_state) = self
                 .machine
                 .states
@@ -96,14 +101,20 @@ impl<R: Rng> Framework<R> {
         self.runtime
             .pop_queues(now)
             .iter()
-            .for_each(|action| match action {
-                Action::Framework(framework_action) => {
-                    framework_actions.push(*framework_action);
-                }
-                Action::Integrator(integrator_action) => {
-                    integrator_actions.push(*integrator_action);
+            .for_each(|(idx, action)| {
+                new_deferred_events.push(Event::QueuePopped(*idx));
+                match action {
+                    Action::Framework(framework_action) => {
+                        framework_actions.push(*framework_action);
+                    }
+                    Action::Integrator(integrator_action) => {
+                        integrator_actions.push(*integrator_action);
+                    }
                 }
             });
+
+        // set new deferred events
+        self.runtime.deferred_events = new_deferred_events;
 
         // perform framework actions
         for action in framework_actions {
@@ -492,5 +503,92 @@ mod tests {
 
         assert!(!actions.is_empty());
         assert_eq!(actions[0], IntegratorAction::SendDecoy);
+    }
+
+    #[test]
+    fn test_deferred_queue_popped_event_ordering() {
+        let trans_probs =
+            TransitionProbs::new([(Event::QueuePopped(0), (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(None, IntegratorAction::ReleaseBlock.into()),
+            ],
+            1,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        let actions = framework.process(&[], now);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], IntegratorAction::SendDecoy);
+        assert_eq!(
+            framework.get_state(),
+            0,
+            "state should not change in the same tick as the pop"
+        );
+        assert_eq!(
+            framework.runtime.deferred_events.len(),
+            1,
+            "queue pop event should be deferred"
+        );
+
+        let actions = framework.process(&[], now);
+
+        assert_eq!(
+            framework.get_state(),
+            1,
+            "state should have transitioned in the second call"
+        );
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], IntegratorAction::ReleaseBlock);
+        assert!(framework.runtime.deferred_events.is_empty());
+    }
+
+    #[test]
+    fn test_deferred_events_happen_before_new_events() {
+        let trans_0_to_1 =
+            TransitionProbs::new([(Event::QueuePopped(0), (1, 1.0).try_into().unwrap())]).unwrap();
+        let trans_1_to_2 =
+            TransitionProbs::new([(Event::SendNormal, (2, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_0_to_1), IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_1_to_2), IntegratorAction::SendDecoy.into()),
+                State::new(None, IntegratorAction::ReleaseBlock.into()),
+            ],
+            1,
+        )
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        framework.process(&[], now);
+        framework.process(&[Event::SendNormal], now);
+
+        // can only reach state 2 via state 1. can only reach state 1 for the Event::SendNormal
+        // trigger to transition to state 2 if deferred event processed first.
+        assert_eq!(
+            framework.get_state(),
+            2,
+            "should have processed deferred event then new event to reach state 2"
+        );
     }
 }
