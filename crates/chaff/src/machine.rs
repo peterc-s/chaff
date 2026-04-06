@@ -122,6 +122,8 @@ impl MachineRuntime {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
+    use std::time::Duration;
+
     use crate::{
         action::IntegratorAction, event::Event, framework::Framework, state::TransitionProbs,
     };
@@ -182,6 +184,94 @@ mod tests {
         match machine {
             Err(ValidationError::TransitionToInvalidState(state)) => {
                 assert!(state[0] == 3usize, "unexpected invalid state: {state:?}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_validate_good_queues() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1).into()),
+                State::new(
+                    None,
+                    FrameworkAction::Schedule {
+                        action: IntegratorAction::SendDecoy,
+                        queue: 1,
+                        delay: Duration::from_secs(1),
+                    }
+                    .into(),
+                ),
+            ],
+            1,
+        );
+
+        assert!(machine.is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_state_action_queue() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(
+                    None,
+                    FrameworkAction::Schedule {
+                        action: IntegratorAction::SendDecoy,
+                        queue: 3,
+                        delay: Duration::from_secs(1),
+                    }
+                    .into(),
+                ),
+            ],
+            1,
+        );
+
+        let invalid_queues = vec![2, 3];
+        match machine {
+            Err(ValidationError::InvalidStateActionQueue(queues)) => {
+                assert_eq!(
+                    queues,
+                    invalid_queues.into_boxed_slice(),
+                    "unexpected invalid queues: {queues:?}"
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_validation_errors() {
+        let trans_probs =
+            TransitionProbs::new([(Event::SendNormal, (5, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(
+                    None,
+                    FrameworkAction::Schedule {
+                        action: IntegratorAction::SendDecoy,
+                        queue: 3,
+                        delay: Duration::from_secs(1),
+                    }
+                    .into(),
+                ),
+            ],
+            1,
+        );
+
+        match machine {
+            Err(ValidationError::Multiple(errors)) => {
+                let num_errors = errors.len();
+                assert_eq!(num_errors, 2, "unexpected number of errors: {num_errors}");
             }
             other => panic!("unexpected result: {other:?}"),
         }

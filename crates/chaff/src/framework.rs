@@ -95,7 +95,7 @@ impl<R: Rng> Framework<R> {
 mod tests {
     use super::*;
     use crate::{
-        action::IntegratorAction,
+        action::{FrameworkAction, IntegratorAction},
         event::Event,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -158,7 +158,7 @@ mod tests {
                     Some(trans_probs.clone()),
                     IntegratorAction::SendDecoy.into(),
                 ),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(None, FrameworkAction::CancelAll.into()),
             ],
             0,
         )
