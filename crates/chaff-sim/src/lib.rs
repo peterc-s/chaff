@@ -144,6 +144,10 @@ impl<R: Rng> Simulator<R> {
             if let Some(until) = blocking_until {
                 if sim_now >= until {
                     blocking_until = None;
+                    while let Some(mut blocked) = blocked_events.pop() {
+                        blocked.time = sim_now;
+                        self.queue.push(blocked);
+                    }
                 }
             }
 
@@ -207,7 +211,10 @@ impl<R: Rng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use chaff::machine::Machine;
+    use chaff::{
+        machine::Machine,
+        state::{State, TransitionProbs},
+    };
 
     use super::*;
 
@@ -266,5 +273,99 @@ mod tests {
         assert!(popped.is_some());
         assert_eq!(popped.unwrap().event, Event::ReceiveNormal);
         assert!(queue.pop_soonest().is_none());
+    }
+
+    #[test]
+    fn test_block_and_manual_release() {
+        let trans_0_to_1 =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+        let trans_1_to_2 =
+            TransitionProbs::new([(Event::ReceiveNormal, (2, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock.into()),
+                State::new(
+                    Some(trans_1_to_2),
+                    IntegratorAction::BlockOutgoing(Duration::from_secs(999)).into(),
+                ),
+                State::new(None, IntegratorAction::ReleaseBlock.into()),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([
+                    Direction::Receive, // 0: trigger block
+                    Direction::Send,    // 1: blocked
+                    Direction::Send,    // 2: blocked
+                    Direction::Receive, // 3: trigger release
+                ]),
+                timing_deltas: Box::new([0, 10, 10, 10]),
+                sizes: Box::new([100, 100, 100, 100]),
+            },
+        );
+
+        let out = sim.run();
+
+        // expected:
+        // recv @ 10 (recorded)
+        // send @ 20 (blocked)
+        // send @ 30 (blocked)
+        // receive @ 40 (recorded, release)
+        // send @ 40 (recorded)
+        // send @ 40 (recorded)
+
+        // check expected directions
+        assert_eq!(out.directions.len(), 4);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Receive);
+        assert_eq!(out.directions[2], Direction::Send);
+        assert_eq!(out.directions[3], Direction::Send);
+
+        // check final burst timings
+        assert_eq!(out.timing_deltas[2], 0);
+        assert_eq!(out.timing_deltas[3], 0);
+    }
+
+    #[test]
+    fn test_block_natural_expiration() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(
+                    None,
+                    IntegratorAction::BlockOutgoing(Duration::from_micros(50)).into(),
+                ),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([
+                    Direction::Receive, // 0: block until 50
+                    Direction::Send,    // 10: should be blocked
+                    Direction::Send,    // 60: should not be blocked
+                ]),
+                timing_deltas: Box::new([0, 10, 50]),
+                sizes: Box::new([100, 100, 100]),
+            },
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 3);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 50); // released after time elapsed.
+        assert_eq!(out.timing_deltas[2], 60);
     }
 }
