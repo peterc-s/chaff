@@ -7,7 +7,8 @@ use std::time::Duration;
 use mac_address::{MacAddress, mac_address_by_name};
 use pcap::{Capture, Device, Linktype, PacketHeader};
 
-use crate::errors::DeviceError;
+use crate::errors::{DeviceError, TraceError};
+use crate::trace::TraceBuilder;
 use crate::{
     errors::CaptureError,
     trace::{Direction, Trace},
@@ -211,8 +212,36 @@ fn packets_to_trace(
     })
 }
 
+/// Stream a [`pcap::Capture`] into a [`Trace`] using the provided `local_mac` to determine
+/// direction if the [`pcap::Capture`]'s [`pcap::Linktype`] is `ETHERNET`.
+pub fn capture_to_trace<T: pcap::Activated>(
+    capture: &mut Capture<T>,
+    local_mac: MacAddress,
+) -> Result<Trace, CaptureError> {
+    let linktype = capture.get_datalink();
+    let mac_bytes = local_mac.bytes();
+
+    if let Ok(first) = capture.next_packet() {
+        let first_ts = packet_ts_to_us(*first.header);
+        let mut trace_builder = TraceBuilder::new(first_ts);
+        let dir = determine_packet_direction(first.data, linktype, mac_bytes)?;
+        trace_builder.record(dir, first_ts, first.header.len);
+
+        while let Ok(packet) = capture.next_packet() {
+            let dir = determine_packet_direction(packet.data, linktype, mac_bytes)?;
+            let current_ts_us = packet_ts_to_us(*packet.header);
+            trace_builder.record(dir, current_ts_us, packet.header.len);
+        }
+
+        Ok(trace_builder.build())
+    } else {
+        Err(CaptureError::Trace(TraceError::UnexpectedEof))
+    }
+}
+
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -481,5 +510,62 @@ mod tests {
         let trace = packets_to_trace(&packets, linktype, local_mac);
 
         assert!(trace.is_err());
+    }
+
+    #[test]
+    fn test_capture_to_trace_success() {
+        // Construct path to pcap
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-http-5.pcap");
+
+        // Create a capture from the file as dummy data
+        let mut cap = Capture::from_file(path).unwrap();
+        let local_mac = MacAddress::from([0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+
+        let trace = capture_to_trace(&mut cap, local_mac)
+            .expect("should successfully stream pcap to trace");
+
+        assert_eq!(trace.directions.len(), 5);
+        assert_eq!(trace.directions[0], Direction::Send);
+        assert_eq!(trace.directions[1], Direction::Receive);
+
+        assert_eq!(trace.timing_deltas[0], 0);
+        assert_eq!(trace.timing_deltas[1], 911_310);
+
+        assert_eq!(trace.sizes[0], 62);
+        assert_eq!(trace.sizes[1], 62);
+    }
+
+    #[test]
+    fn test_capture_to_trace_sll2() {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-sll2-single-type-0.pcap");
+
+        let mut cap = Capture::from_file(path).unwrap();
+        let local_mac = MacAddress::from([0; 6]);
+
+        let trace = capture_to_trace(&mut cap, local_mac).unwrap();
+
+        assert_eq!(trace.directions.len(), 1);
+        assert_eq!(trace.directions[0], Direction::Receive);
+        assert_eq!(trace.sizes[0], 144);
+    }
+
+    #[test]
+    fn test_capture_to_trace_empty_error() {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-pcaps/test-sll2-single-type-0.pcap");
+
+        let mut cap = Capture::from_file(path).unwrap();
+
+        // Exhaust the capture
+        while cap.next_packet().is_ok() {}
+
+        let result = capture_to_trace(&mut cap, MacAddress::from([0; 6]));
+
+        match result {
+            Err(CaptureError::Trace(TraceError::UnexpectedEof)) => (),
+            _ => panic!("unexpected result: {result:?}"),
+        }
     }
 }

@@ -12,6 +12,22 @@ pub enum Event {
     /// Normal packet received (ingress). Emitted by integrator.
     ReceiveNormal,
 
+    /// Decoy packet sent (egress). Emitted by integrator.
+    SendDecoy,
+
+    /// Decoy packet received (ingress). Emitted by integrator.
+    ReceiveDecoy,
+
     /// Given queue was popped. Emitted by framework.
     QueuePopped(u8),
+}
+
+impl Event {
+    /// Whether an event can be emitted by a [`crate::framework::Framework`] as deferred.
+    pub fn is_deferred(&self) -> bool {
+        match self {
+            Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,
+            Self::QueuePopped(_) => true,
+        }
+    }
 }

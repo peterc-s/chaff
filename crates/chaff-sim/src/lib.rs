@@ -1,8 +1,12 @@
 //! The Chaff simulator for creating defended traces with machines.
-use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, VecDeque},
+    time::{Duration, Instant},
+};
 
-use chaff::{event::Event, framework::Framework};
-use chaff_capture::trace::{Direction, Trace, TracePacket};
+use chaff::{action::IntegratorAction, event::Event, framework::Framework};
+use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 use rand::Rng;
 
 /// A simulated event.
@@ -32,54 +36,60 @@ impl PartialOrd for SimulatorEvent {
     }
 }
 
-/// Represents the device's ingress and egress queues.
-#[derive(Clone, Debug, Default)]
-pub struct SimulatorQueue {
-    ingress: BinaryHeap<SimulatorEvent>,
-    egress: BinaryHeap<SimulatorEvent>,
-}
+/// Thin wrapper around a [`BinaryHeap<SimulatorEvent>`] for implementing [`From<Trace>`].
+#[derive(Default, Debug, Clone)]
+pub struct SimulatorQueue(BTreeMap<u64, VecDeque<SimulatorEvent>>);
 
 impl SimulatorQueue {
-    /// Pops the soonest event in either the ingress or egress queue.
-    pub fn pop_soonest(&mut self) -> Option<SimulatorEvent> {
-        match (self.ingress.peek(), self.egress.peek()) {
-            (None, None) => None,
-            (None, Some(_)) => self.egress.pop(),
-            (Some(_), None) => self.ingress.pop(),
-            (Some(ingress), Some(egress)) => {
-                if ingress.time < egress.time {
-                    self.ingress.pop()
-                } else {
-                    self.egress.pop()
-                }
-            }
+    /// TODO
+    pub fn peek_time(&self) -> Option<u64> {
+        self.0.keys().next().copied()
+    }
+
+    /// TODO
+    pub fn pop(&mut self) -> Option<SimulatorEvent> {
+        let mut first_entry = self.0.first_entry()?;
+        let bucket = first_entry.get_mut();
+        let event = bucket.pop_front();
+        if bucket.is_empty() {
+            first_entry.remove();
         }
+        event
+    }
+
+    /// TODO
+    pub fn push(&mut self, item: SimulatorEvent) {
+        self.0.entry(item.time).or_default().push_back(item);
     }
 }
 
 impl From<Trace> for SimulatorQueue {
     fn from(value: Trace) -> Self {
-        let mut ingress = BinaryHeap::new();
-        let mut egress = BinaryHeap::new();
+        let mut queue = Self::default();
         let mut time_acc = 0u64;
 
         for TracePacket(dir, delta, size) in &value {
             time_acc += u64::from(delta);
-            match dir {
-                Direction::Send => egress.push(SimulatorEvent {
-                    event: Event::SendNormal,
-                    time: time_acc,
-                    size,
-                }),
-                Direction::Receive => ingress.push(SimulatorEvent {
-                    event: Event::ReceiveNormal,
-                    time: time_acc,
-                    size,
-                }),
-            }
+            queue.push(SimulatorEvent {
+                event: if dir == Direction::Send {
+                    Event::SendNormal
+                } else {
+                    Event::ReceiveNormal
+                },
+                time: time_acc,
+                size,
+            });
         }
 
-        Self { ingress, egress }
+        queue
+    }
+}
+
+impl Extend<SimulatorEvent> for SimulatorQueue {
+    fn extend<T: IntoIterator<Item = SimulatorEvent>>(&mut self, iter: T) {
+        for item in iter {
+            self.push(item);
+        }
     }
 }
 
@@ -96,6 +106,37 @@ pub struct Simulator<R: Rng> {
     queue: SimulatorQueue,
 }
 
+#[derive(Clone, Debug, Default)]
+struct BlockState {
+    until: Option<u64>,
+    buffered: Vec<SimulatorEvent>,
+}
+
+impl BlockState {
+    fn is_active_at(&self, time: u64) -> bool {
+        self.until.map_or_else(|| false, |until| time <= until)
+    }
+
+    fn block(&mut self, until: u64) {
+        self.until = Some(until);
+    }
+
+    fn buffer(&mut self, event: SimulatorEvent) {
+        self.buffered.push(event);
+    }
+
+    fn release(&mut self, release_time: u64) -> Vec<SimulatorEvent> {
+        self.until = None;
+        self.buffered
+            .drain(..)
+            .map(|mut event| {
+                event.time = release_time;
+                event
+            })
+            .collect()
+    }
+}
+
 impl<R: Rng> Simulator<R> {
     /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
     /// [`Trace`] to run the simulation on.
@@ -109,47 +150,76 @@ impl<R: Rng> Simulator<R> {
 
     /// Run the simulation. This instantiates internal queues with the [`Simulator::trace`].
     pub fn run(&mut self) -> Trace {
-        let trace_len = self.trace.len();
         self.queue = SimulatorQueue::from(self.trace.clone());
+        let mut block_state = BlockState::default();
+        let mut out_builder = TraceBuilder::default();
+        let base_instant = Instant::now();
 
-        // for output trace
-        let mut directions: Vec<Direction> = Vec::with_capacity(trace_len);
-        let mut timing_deltas = Vec::with_capacity(trace_len);
-        let mut sizes = Vec::with_capacity(trace_len);
-
-        let mut last_event_ts = 0;
-        while let Some(event) = self.queue.pop_soonest() {
-            let now = Instant::now();
-            // FIXME: unused for now
-            let _ = self.framework.process(&[event.event], now);
-
-            match event.event {
-                Event::SendNormal => directions.push(Direction::Send),
-                Event::ReceiveNormal => directions.push(Direction::Receive),
-                Event::QueuePopped(_) => {}
+        loop {
+            if let Some(until) = block_state.until {
+                if self.queue.peek_time().is_none_or(|t| until <= t) {
+                    self.queue.extend(block_state.release(until));
+                }
             }
-            timing_deltas.push(event.time - last_event_ts);
-            sizes.push(event.size);
 
-            last_event_ts = event.time;
+            let Some(event) = self.queue.pop() else { break };
+            let sim_now = event.time;
+
+            if event.event == Event::SendNormal && block_state.is_active_at(sim_now) {
+                block_state.buffer(event);
+                continue;
+            }
+
+            if !event.event.is_deferred() {
+                out_builder.record(
+                    if matches!(event.event, Event::SendNormal | Event::SendDecoy) {
+                        Direction::Send
+                    } else {
+                        Direction::Receive
+                    },
+                    sim_now,
+                    event.size,
+                );
+            }
+
+            let sim_instant = base_instant + Duration::from_micros(sim_now);
+            let actions = self.framework.process(&[event.event], sim_instant);
+
+            for action in actions {
+                match action {
+                    IntegratorAction::SendDecoy => {
+                        // TODO: size configuration in machines
+                        self.queue.push(SimulatorEvent {
+                            event: Event::SendDecoy,
+                            time: sim_now,
+                            size: 512,
+                        });
+                    }
+                    IntegratorAction::BlockOutgoing(duration) => {
+                        #[expect(clippy::cast_possible_truncation)]
+                        let end_ts = sim_now + duration.as_micros() as u64;
+                        block_state.block(end_ts);
+                    }
+                    IntegratorAction::ReleaseBlock => {
+                        self.queue.extend(block_state.release(sim_now));
+                    }
+                }
+            }
         }
 
-        // event.time is u64 because it is absolute, the deltas are differences and
-        // should fall in the trace u32.
-        // TODO: if this becomes a problem, handle it properly.
-        #[expect(clippy::cast_possible_truncation)]
-        Trace {
-            directions: directions.into(),
-            timing_deltas: timing_deltas.iter().map(|val| *val as u32).collect(),
-            sizes: sizes.into(),
-        }
+        out_builder.build()
     }
 }
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use chaff::machine::Machine;
+    use std::{fs, path::PathBuf};
+
+    use chaff::{
+        machine::Machine,
+        state::{State, TransitionProbs},
+    };
 
     use super::*;
 
@@ -166,6 +236,35 @@ mod tests {
         let out_trace = sim.run();
 
         assert_eq!(trace, out_trace);
+    }
+
+    #[test]
+    fn test_sim_round_trip_from_trace_files() {
+        let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR").to_string() + "/test-traces");
+
+        let mut found_file = false;
+        for file in fs::read_dir(&base_path)
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("bin")
+            })
+        {
+            found_file = true;
+            let mut path = base_path.clone();
+            path.push(file);
+
+            let in_trace = Trace::deserialise(&path).unwrap();
+
+            let framework = Framework::new(Machine::default(), rand::rng());
+            let mut sim = Simulator::with(framework, in_trace.clone());
+            let out_trace = sim.run();
+
+            assert_eq!(in_trace, out_trace);
+        }
+
+        assert!(found_file);
     }
 
     #[test]
@@ -194,19 +293,128 @@ mod tests {
     }
 
     #[test]
-    fn test_pop_soonest_ingress() {
-        let mut queue = SimulatorQueue::default();
+    fn test_block_and_manual_release() {
+        let trans_0_to_1 =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+        let trans_1_to_2 =
+            TransitionProbs::new([(Event::ReceiveNormal, (2, 1.0).try_into().unwrap())]).unwrap();
 
-        queue.ingress.push(SimulatorEvent {
-            event: Event::ReceiveNormal,
-            time: 50,
-            size: 0,
-        });
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock.into()),
+                State::new(
+                    Some(trans_1_to_2),
+                    IntegratorAction::BlockOutgoing(Duration::from_secs(999)).into(),
+                ),
+                State::new(None, IntegratorAction::ReleaseBlock.into()),
+            ],
+            0,
+        )
+        .unwrap();
 
-        let popped = queue.pop_soonest();
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([
+                    Direction::Receive, // 0: trigger block
+                    Direction::Send,    // 1: blocked
+                    Direction::Send,    // 2: blocked
+                    Direction::Receive, // 3: trigger release
+                ]),
+                timing_deltas: Box::new([0, 10, 10, 10]),
+                sizes: Box::new([100, 100, 100, 100]),
+            },
+        );
 
-        assert!(popped.is_some());
-        assert_eq!(popped.unwrap().event, Event::ReceiveNormal);
-        assert!(queue.pop_soonest().is_none());
+        let out = sim.run();
+
+        // expected:
+        // recv @ 10 (recorded)
+        // send @ 20 (blocked)
+        // send @ 30 (blocked)
+        // receive @ 40 (recorded, release)
+        // send @ 40 (recorded)
+        // send @ 40 (recorded)
+
+        // check expected directions
+        assert_eq!(out.directions.len(), 4);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Receive);
+        assert_eq!(out.directions[2], Direction::Send);
+        assert_eq!(out.directions[3], Direction::Send);
+
+        // check final burst timings
+        assert_eq!(out.timing_deltas[2], 0);
+        assert_eq!(out.timing_deltas[3], 0);
+    }
+
+    #[test]
+    fn test_block_natural_expiration() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(
+                    None,
+                    IntegratorAction::BlockOutgoing(Duration::from_micros(50)).into(),
+                ),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([
+                    Direction::Receive, // 0: block until 50
+                    Direction::Send,    // 10: should be blocked
+                    Direction::Send,    // 60: should not be blocked
+                ]),
+                timing_deltas: Box::new([0, 10, 50]),
+                sizes: Box::new([100, 100, 100]),
+            },
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 3);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 50); // released after time elapsed.
+        assert_eq!(out.timing_deltas[2], 10);
+    }
+
+    #[test]
+    fn test_send_decoy() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(None, IntegratorAction::SendDecoy.into()),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([Direction::Receive]),
+                timing_deltas: Box::new([0]),
+                sizes: Box::new([100]),
+            },
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 2);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 0);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
     }
 }

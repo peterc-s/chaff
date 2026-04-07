@@ -95,6 +95,8 @@ dependencies = [
  "chaff-capture",
  "chaff-machines",
  "chaff-sim",
+ "mac_address",
+ "pcap",
  "rand",
 ]
 

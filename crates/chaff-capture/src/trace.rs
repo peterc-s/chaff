@@ -18,6 +18,46 @@ pub enum Direction {
     Receive,
 }
 
+/// A builder for [`Trace`]. Allows building up a [`Trace`] by repeatedly adding packets to the end
+/// with [`TraceBuilder::record`] and then building with [`TraceBuilder::build`].
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct TraceBuilder {
+    directions: Vec<Direction>,
+    timing_deltas: Vec<u32>,
+    sizes: Vec<u32>,
+    last_ts: u64,
+}
+
+impl TraceBuilder {
+    /// Create a new [`TraceBuilder`] with the given initial timestamp.
+    pub fn new(initial_ts: u64) -> Self {
+        Self {
+            directions: vec![],
+            timing_deltas: vec![],
+            sizes: vec![],
+            last_ts: initial_ts,
+        }
+    }
+
+    /// Add a packet to the [`TraceBuilder`].
+    pub fn record(&mut self, dir: Direction, time: u64, size: u32) {
+        self.directions.push(dir);
+        #[expect(clippy::cast_possible_truncation)]
+        self.timing_deltas.push((time - self.last_ts) as u32);
+        self.sizes.push(size);
+        self.last_ts = time;
+    }
+
+    /// Build a [`Trace`] out of this [`TraceBuilder`].
+    pub fn build(self) -> Trace {
+        Trace {
+            directions: self.directions.into_boxed_slice(),
+            timing_deltas: self.timing_deltas.into_boxed_slice(),
+            sizes: self.sizes.into_boxed_slice(),
+        }
+    }
+}
+
 /// Represents a trace explicitly with packet [Direction]s, packet timing deltas, and sizes
 /// (assumes non-fixed transmission unit size). Fixed-size, field lengths should match.
 #[derive(Debug, Clone, PartialEq, Eq)]
