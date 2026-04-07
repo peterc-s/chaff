@@ -165,7 +165,7 @@ impl<R: Rng> Simulator<R> {
 
             if !event.event.is_deferred() {
                 out_builder.record(
-                    if event.event == Event::SendNormal {
+                    if matches!(event.event, Event::SendNormal | Event::SendDecoy) {
                         Direction::Send
                     } else {
                         Direction::Receive
@@ -181,9 +181,9 @@ impl<R: Rng> Simulator<R> {
             for action in actions {
                 match action {
                     IntegratorAction::SendDecoy => {
-                        // TODO: decoy events + size configuration
+                        // TODO: size configuration in machines
                         self.queue.push(SimulatorEvent {
-                            event: Event::SendNormal,
+                            event: Event::SendDecoy,
                             time: sim_now,
                             size: 512,
                         });
