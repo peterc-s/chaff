@@ -7,8 +7,8 @@ cd "$REPO_DIR" || exit
 FILES=$(find . -type f \( -name "*.rs" -o -name "*.nix" \))
 
 if [[ -z "$FILES" ]]; then
-    echo "No matching files found."
-    exit 0
+  echo "No matching files found."
+  exit 0
 fi
 
 awk '
@@ -17,13 +17,13 @@ awk '
         display_name = FILENAME
         sub(/^\//, "", display_name)
         if (FILENAME ~ /\.rs$/) {
-            comment_regex = "^[[:space:]]*//"
+            comment_regex = "^[[:space:]]*///?"
         } else if (FILENAME ~ /\.nix$/) {
             comment_regex = "^[[:space:]]*#"
         }
     }
     
-    /(TODO|FIXME|HACK):/ {
+    /(TODO|FIXME|HACK):?/ {
         if (!active) {
             print "\n--- " display_name " ---"
             active = 1
