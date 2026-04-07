@@ -1,7 +1,7 @@
 //! The Chaff simulator for creating defended traces with machines.
 use std::{
     cmp::Ordering,
-    collections::BinaryHeap,
+    collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
 };
 
@@ -38,28 +38,34 @@ impl PartialOrd for SimulatorEvent {
 
 /// Thin wrapper around a [`BinaryHeap<SimulatorEvent>`] for implementing [`From<Trace>`].
 #[derive(Default, Debug, Clone)]
-pub struct SimulatorQueue(BinaryHeap<SimulatorEvent>);
+pub struct SimulatorQueue(BTreeMap<u64, VecDeque<SimulatorEvent>>);
 
 impl SimulatorQueue {
-    /// See [`BinaryHeap::peek`].
-    pub fn peek(&self) -> Option<&SimulatorEvent> {
-        self.0.peek()
+    /// TODO
+    pub fn peek_time(&self) -> Option<u64> {
+        self.0.keys().next().copied()
     }
 
-    /// See [`BinaryHeap::pop`].
+    /// TODO
     pub fn pop(&mut self) -> Option<SimulatorEvent> {
-        self.0.pop()
+        let mut first_entry = self.0.first_entry()?;
+        let bucket = first_entry.get_mut();
+        let event = bucket.pop_front();
+        if bucket.is_empty() {
+            first_entry.remove();
+        }
+        event
     }
 
-    /// See [`BinaryHeap::push`].
+    /// TODO
     pub fn push(&mut self, item: SimulatorEvent) {
-        self.0.push(item);
+        self.0.entry(item.time).or_default().push_back(item);
     }
 }
 
 impl From<Trace> for SimulatorQueue {
     fn from(value: Trace) -> Self {
-        let mut queue = BinaryHeap::new();
+        let mut queue = Self::default();
         let mut time_acc = 0u64;
 
         for TracePacket(dir, delta, size) in &value {
@@ -75,13 +81,15 @@ impl From<Trace> for SimulatorQueue {
             });
         }
 
-        Self(queue)
+        queue
     }
 }
 
 impl Extend<SimulatorEvent> for SimulatorQueue {
     fn extend<T: IntoIterator<Item = SimulatorEvent>>(&mut self, iter: T) {
-        self.0.extend(iter);
+        for item in iter {
+            self.push(item);
+        }
     }
 }
 
@@ -149,8 +157,7 @@ impl<R: Rng> Simulator<R> {
 
         loop {
             if let Some(until) = block_state.until {
-                let next_time = self.queue.peek().map(|event| event.time);
-                if next_time.map_or_else(|| true, |t| until <= t) {
+                if self.queue.peek_time().is_none_or(|t| until <= t) {
                     self.queue.extend(block_state.release(until));
                 }
             }
@@ -207,6 +214,8 @@ impl<R: Rng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
+    use std::{fs, path::PathBuf};
+
     use chaff::{
         machine::Machine,
         state::{State, TransitionProbs},
@@ -227,6 +236,35 @@ mod tests {
         let out_trace = sim.run();
 
         assert_eq!(trace, out_trace);
+    }
+
+    #[test]
+    fn test_sim_round_trip_from_trace_files() {
+        let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR").to_string() + "/test-traces");
+
+        let mut found_file = false;
+        for file in fs::read_dir(&base_path)
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("bin")
+            })
+        {
+            found_file = true;
+            let mut path = base_path.clone();
+            path.push(file);
+
+            let in_trace = Trace::deserialise(&path).unwrap();
+
+            let framework = Framework::new(Machine::default(), rand::rng());
+            let mut sim = Simulator::with(framework, in_trace.clone());
+            let out_trace = sim.run();
+
+            assert_eq!(in_trace, out_trace);
+        }
+
+        assert!(found_file);
     }
 
     #[test]

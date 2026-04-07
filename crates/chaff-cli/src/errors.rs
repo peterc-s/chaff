@@ -6,15 +6,25 @@
 use std::{error::Error, fmt};
 
 use chaff_capture::errors::{CaptureError, TraceError};
+use mac_address::{MacAddressError, MacParseError};
 
 /// CLI errors
 #[derive(Debug)]
 pub enum CliError {
-    /// Device specified but not found
+    /// Device specified but not found.
     DeviceNotFound(String),
 
-    /// Errors from the chaff-capture crate
+    /// Errors from the chaff-capture crate.
     Capture(CaptureError),
+
+    /// Errors from the [`mac_address`] crate's [`MacAddressError`].
+    MacAddress(MacAddressError),
+
+    /// Errors from the [`mac_address`] crate's [`MacParseError`].
+    MacParse(MacParseError),
+
+    /// Errors from the [`pcap`] crate.
+    Pcap(pcap::Error),
 }
 
 const RESET: &str = "\x1b[0m";
@@ -26,6 +36,9 @@ impl Error for CliError {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             Self::Capture(e) => Some(e),
+            Self::MacAddress(e) => Some(e),
+            Self::MacParse(e) => Some(e),
+            Self::Pcap(e) => Some(e),
             _ => None,
         }
     }
@@ -37,7 +50,28 @@ impl fmt::Display for CliError {
         match self {
             Self::DeviceNotFound(device) => write!(f, "device specified but not found: {device}"),
             Self::Capture(e) => write!(f, "capture error: {e}"),
+            Self::MacAddress(e) => write!(f, "MAC address error: {e}"),
+            Self::MacParse(e) => write!(f, "MAC parse error: {e}"),
+            Self::Pcap(e) => write!(f, "pcap error: {e}"),
         }
+    }
+}
+
+impl From<MacParseError> for CliError {
+    fn from(e: MacParseError) -> Self {
+        Self::MacParse(e)
+    }
+}
+
+impl From<MacAddressError> for CliError {
+    fn from(e: MacAddressError) -> Self {
+        Self::MacAddress(e)
+    }
+}
+
+impl From<pcap::Error> for CliError {
+    fn from(e: pcap::Error) -> Self {
+        Self::Pcap(e)
     }
 }
 

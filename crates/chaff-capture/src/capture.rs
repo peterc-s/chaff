@@ -7,7 +7,8 @@ use std::time::Duration;
 use mac_address::{MacAddress, mac_address_by_name};
 use pcap::{Capture, Device, Linktype, PacketHeader};
 
-use crate::errors::DeviceError;
+use crate::errors::{DeviceError, TraceError};
+use crate::trace::TraceBuilder;
 use crate::{
     errors::CaptureError,
     trace::{Direction, Trace},
@@ -209,6 +210,33 @@ fn packets_to_trace(
         timing_deltas,
         sizes,
     })
+}
+
+/// Stream a [`pcap::Capture`] into a [`Trace`] using the provided `local_mac` to determine
+/// direction if the [`pcap::Capture`]'s [`pcap::Linktype`] is `ETHERNET`.
+pub fn capture_to_trace<T: pcap::Activated>(
+    capture: &mut Capture<T>,
+    local_mac: MacAddress,
+) -> Result<Trace, CaptureError> {
+    let linktype = capture.get_datalink();
+    let mac_bytes = local_mac.bytes();
+
+    if let Ok(first) = capture.next_packet() {
+        let first_ts = packet_ts_to_us(*first.header);
+        let mut trace_builder = TraceBuilder::new(first_ts);
+        let dir = determine_packet_direction(first.data, linktype, mac_bytes)?;
+        trace_builder.record(dir, first_ts, first.header.len);
+
+        while let Ok(packet) = capture.next_packet() {
+            let dir = determine_packet_direction(packet.data, linktype, mac_bytes)?;
+            let current_ts_us = packet_ts_to_us(*packet.header);
+            trace_builder.record(dir, current_ts_us, packet.header.len);
+        }
+
+        Ok(trace_builder.build())
+    } else {
+        Err(CaptureError::Trace(TraceError::UnexpectedEof))
+    }
 }
 
 #[cfg(test)]

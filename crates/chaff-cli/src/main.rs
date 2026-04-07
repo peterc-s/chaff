@@ -4,18 +4,20 @@
 // Not unit-testable
 #![cfg(not(tarpaulin_include))]
 
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr as _};
 
 use bpaf::Bpaf;
 use chaff::framework::Framework;
 use chaff_capture::{
-    capture::{capture_for, find_interface},
+    capture::{capture_for, capture_to_trace, find_interface},
     errors::CaptureError,
     trace::Trace,
 };
 use chaff_cli::errors::CliError;
 use chaff_machines::test::construct_test_machine;
 use chaff_sim::Simulator;
+use mac_address::{MacAddress, MacAddressError, get_mac_address};
+use pcap::Capture;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -47,6 +49,22 @@ pub enum CliOptions {
         /// Path to trace file to simulate a machine on.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
+    },
+
+    #[bpaf(command("convert"))]
+    /// Convert a pcap into a chaff trace.
+    Convert {
+        /// Path to input pcap file.
+        #[bpaf(positional("PCAP"))]
+        pcap: PathBuf,
+
+        /// Path to output trace file.
+        #[bpaf(positional("TRACE"))]
+        trace: PathBuf,
+
+        /// MAC address to use as the local file.
+        #[bpaf(short, long)]
+        mac: Option<String>,
     },
 }
 
@@ -104,6 +122,17 @@ fn run() -> Result<(), CliError> {
 
             println!("{}", sim.run());
             println!("{}", sim.framework.get_state());
+        }
+        CliOptions::Convert { pcap, trace, mac } => {
+            let mac_address = if let Some(mac_string) = mac {
+                MacAddress::from_str(mac_string.as_str()).map_err(CliError::MacParse)?
+            } else {
+                get_mac_address()?.ok_or(CliError::MacAddress(MacAddressError::InternalError))?
+            };
+
+            let mut cap = Capture::from_file(&pcap)?;
+            let out = capture_to_trace(&mut cap, mac_address)?;
+            out.serialise(&trace)?;
         }
     }
 

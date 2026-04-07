@@ -29,6 +29,16 @@ pub struct TraceBuilder {
 }
 
 impl TraceBuilder {
+    /// Create a new [`TraceBuilder`] with the given initial timestamp.
+    pub fn new(initial_ts: u64) -> Self {
+        Self {
+            directions: vec![],
+            timing_deltas: vec![],
+            sizes: vec![],
+            last_ts: initial_ts,
+        }
+    }
+
     /// Add a packet to the [`TraceBuilder`].
     pub fn record(&mut self, dir: Direction, time: u64, size: u32) {
         self.directions.push(dir);
