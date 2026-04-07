@@ -1,6 +1,5 @@
 //! Use [libpcap](https://github.com/the-tcpdump-group/libpcap) through the [pcap] crate to capture
 //! a [`crate::trace::Trace`].
-// TODO: move to a separate crate so the main library does not depend on pcap or mac_address
 
 use std::time::Duration;
 

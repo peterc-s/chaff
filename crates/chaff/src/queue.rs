@@ -1,14 +1,19 @@
-#![expect(missing_docs)]
+//! Contains the chaff [`TimedQueue`] which is forms part of a [`crate::machine::MachineRuntime`].
 
 use std::{collections::BinaryHeap, time::Instant};
 
 use crate::action::Action;
 
+/// Represents that something is "timed": it can be "ready" and will "execute" at some [`Instant`].
 pub trait Timed {
+    /// Returns whether it is ready.
     fn ready(&self, now: Instant) -> bool;
+
+    /// Returns the instant at which it should be ready.
     fn execute_at(&self) -> Instant;
 }
 
+/// A wrapper around implementors of [`Timed`], representing that something can be scheduled.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Scheduled<T: Timed>(pub T);
 
@@ -33,9 +38,13 @@ impl<T: Timed> Ord for Scheduled<T> {
     }
 }
 
+/// An [`Action`] that implements [`Timed`] for use with the [`TimedQueue`].
 #[derive(Debug, Clone, Copy)]
 pub struct TimedAction {
+    /// When to execute the action (see [`Timed::execute_at`]).
     pub execute_at: Instant,
+
+    /// The [`Action`] to execute.
     pub action: Action,
 }
 
@@ -49,22 +58,27 @@ impl Timed for TimedAction {
     }
 }
 
+/// A priority queue of [`Scheduled`] objects, ordered by their [`Timed::execute_at`]. Under the hood
+/// this is just a [`BinaryHeap<Scheduled<T>>`].
 #[derive(Debug, Clone, Default)]
 pub struct TimedQueue<T: Timed> {
     pub(crate) queue: BinaryHeap<Scheduled<T>>,
 }
 
 impl<T: Timed> TimedQueue<T> {
+    /// Create a new, empty [`TimedQueue`].
     pub fn new() -> Self {
         Self {
             queue: BinaryHeap::new(),
         }
     }
 
+    /// Push an item onto the [`TimedQueue`].
     pub fn push(&mut self, item: T) {
         self.queue.push(Scheduled(item));
     }
 
+    /// Pop all items that are ready (i.e. [`Timed::ready`] is `true`)
     pub fn pop_ready(&mut self, now: Instant) -> Box<[T]> {
         let mut ready = Vec::new();
 
@@ -77,10 +91,12 @@ impl<T: Timed> TimedQueue<T> {
         ready.into_boxed_slice()
     }
 
+    /// Cancel all scheduled events on the queue.
     pub fn cancel(&mut self) {
         self.queue.clear();
     }
 
+    /// Check if the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }

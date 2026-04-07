@@ -1,5 +1,4 @@
-//! The Chaff framework.
-// TODO: document
+//! Contains the Chaff [`Framework`]: an instance of the Chaff library.
 
 use std::time::Instant;
 
