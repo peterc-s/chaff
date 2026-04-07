@@ -15,3 +15,13 @@ pub enum Event {
     /// Given queue was popped. Emitted by framework.
     QueuePopped(u8),
 }
+
+impl Event {
+    /// Whether an event can be emitted by a [`crate::framework::Framework`] as deferred.
+    pub fn is_deferred(&self) -> bool {
+        match self {
+            Self::SendNormal | Self::ReceiveNormal => false,
+            Self::QueuePopped(_) => true,
+        }
+    }
+}

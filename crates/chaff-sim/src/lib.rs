@@ -6,7 +6,7 @@ use std::{
 };
 
 use chaff::{action::IntegratorAction, event::Event, framework::Framework};
-use chaff_capture::trace::{Direction, Trace, TracePacket};
+use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 use rand::Rng;
 
 /// A simulated event.
@@ -36,75 +36,52 @@ impl PartialOrd for SimulatorEvent {
     }
 }
 
-/// Represents the device's ingress and egress queues.
-#[derive(Clone, Debug, Default)]
-pub struct SimulatorQueue {
-    ingress: BinaryHeap<SimulatorEvent>,
-    egress: BinaryHeap<SimulatorEvent>,
-}
+/// Thin wrapper around a [`BinaryHeap<SimulatorEvent>`] for implementing [`From<Trace>`].
+#[derive(Default, Debug, Clone)]
+pub struct SimulatorQueue(BinaryHeap<SimulatorEvent>);
 
 impl SimulatorQueue {
-    /// Pops the soonest event in either the ingress or egress queue.
-    pub fn pop_soonest(&mut self) -> Option<SimulatorEvent> {
-        match (self.ingress.peek(), self.egress.peek()) {
-            (None, None) => None,
-            (None, Some(_)) => self.egress.pop(),
-            (Some(_), None) => self.ingress.pop(),
-            (Some(ingress), Some(egress)) => {
-                if ingress.time < egress.time {
-                    self.ingress.pop()
-                } else {
-                    self.egress.pop()
-                }
-            }
-        }
+    /// See [`BinaryHeap::peek`].
+    pub fn peek(&self) -> Option<&SimulatorEvent> {
+        self.0.peek()
     }
 
-    /// Peeks the soonest time in either the ingress or egress queue.
-    pub fn peek_soonest_time(&self) -> Option<u64> {
-        match (self.ingress.peek(), self.egress.peek()) {
-            (None, None) => None,
-            (None, Some(e)) | (Some(e), None) => Some(e.time),
-            (Some(i), Some(e)) => Some(i.time.min(e.time)),
-        }
+    /// See [`BinaryHeap::pop`].
+    pub fn pop(&mut self) -> Option<SimulatorEvent> {
+        self.0.pop()
     }
 
-    /// Push an event to the [`SimulatorQueue`].
-    ///
-    /// [`Event::SendNormal`]s go on the egress queue.
-    /// [`Event::ReceiveNormal`]s go on the ingress queue.
-    pub fn push(&mut self, event: SimulatorEvent) {
-        match event.event {
-            Event::SendNormal => self.egress.push(event),
-            Event::ReceiveNormal => self.ingress.push(event),
-            Event::QueuePopped(_) => {}
-        }
+    /// See [`BinaryHeap::push`].
+    pub fn push(&mut self, item: SimulatorEvent) {
+        self.0.push(item);
     }
 }
 
 impl From<Trace> for SimulatorQueue {
     fn from(value: Trace) -> Self {
-        let mut ingress = BinaryHeap::new();
-        let mut egress = BinaryHeap::new();
+        let mut queue = BinaryHeap::new();
         let mut time_acc = 0u64;
 
         for TracePacket(dir, delta, size) in &value {
             time_acc += u64::from(delta);
-            match dir {
-                Direction::Send => egress.push(SimulatorEvent {
-                    event: Event::SendNormal,
-                    time: time_acc,
-                    size,
-                }),
-                Direction::Receive => ingress.push(SimulatorEvent {
-                    event: Event::ReceiveNormal,
-                    time: time_acc,
-                    size,
-                }),
-            }
+            queue.push(SimulatorEvent {
+                event: if dir == Direction::Send {
+                    Event::SendNormal
+                } else {
+                    Event::ReceiveNormal
+                },
+                time: time_acc,
+                size,
+            });
         }
 
-        Self { ingress, egress }
+        Self(queue)
+    }
+}
+
+impl Extend<SimulatorEvent> for SimulatorQueue {
+    fn extend<T: IntoIterator<Item = SimulatorEvent>>(&mut self, iter: T) {
+        self.0.extend(iter);
     }
 }
 
@@ -121,6 +98,37 @@ pub struct Simulator<R: Rng> {
     queue: SimulatorQueue,
 }
 
+#[derive(Clone, Debug, Default)]
+struct BlockState {
+    until: Option<u64>,
+    buffered: Vec<SimulatorEvent>,
+}
+
+impl BlockState {
+    fn is_active_at(&self, time: u64) -> bool {
+        self.until.map_or_else(|| false, |until| time <= until)
+    }
+
+    fn block(&mut self, until: u64) {
+        self.until = Some(until);
+    }
+
+    fn buffer(&mut self, event: SimulatorEvent) {
+        self.buffered.push(event);
+    }
+
+    fn release(&mut self, release_time: u64) -> Vec<SimulatorEvent> {
+        self.until = None;
+        self.buffered
+            .drain(..)
+            .map(|mut event| {
+                event.time = release_time;
+                event
+            })
+            .collect()
+    }
+}
+
 impl<R: Rng> Simulator<R> {
     /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
     /// [`Trace`] to run the simulation on.
@@ -134,58 +142,46 @@ impl<R: Rng> Simulator<R> {
 
     /// Run the simulation. This instantiates internal queues with the [`Simulator::trace`].
     pub fn run(&mut self) -> Trace {
-        let trace_len = self.trace.len();
         self.queue = SimulatorQueue::from(self.trace.clone());
-        let mut blocking_until: Option<u64> = None;
-        let mut blocked_events: Vec<SimulatorEvent> = vec![];
-
-        // for output trace
-        let mut directions: Vec<Direction> = Vec::with_capacity(trace_len);
-        let mut timing_deltas = Vec::with_capacity(trace_len);
-        let mut sizes = Vec::with_capacity(trace_len);
-
+        let mut block_state = BlockState::default();
+        let mut out_builder = TraceBuilder::default();
         let base_instant = Instant::now();
-        let mut last_event_ts = 0;
 
         loop {
-            if let Some(until) = blocking_until {
-                if self.queue.peek_soonest_time().is_none_or(|t| until <= t) {
-                    blocking_until = None;
-                    while let Some(mut blocked) = blocked_events.pop() {
-                        blocked.time = until;
-                        self.queue.push(blocked);
-                    }
-                    continue;
+            if let Some(until) = block_state.until {
+                let next_time = self.queue.peek().map(|event| event.time);
+                if next_time.map_or_else(|| true, |t| until <= t) {
+                    self.queue.extend(block_state.release(until));
                 }
             }
 
-            let Some(event) = self.queue.pop_soonest() else {
-                break;
-            };
-
+            let Some(event) = self.queue.pop() else { break };
             let sim_now = event.time;
-            if event.event == Event::SendNormal && blocking_until.is_some() {
-                blocked_events.push(event);
+
+            if event.event == Event::SendNormal && block_state.is_active_at(sim_now) {
+                block_state.buffer(event);
                 continue;
+            }
+
+            if !event.event.is_deferred() {
+                out_builder.record(
+                    if event.event == Event::SendNormal {
+                        Direction::Send
+                    } else {
+                        Direction::Receive
+                    },
+                    sim_now,
+                    event.size,
+                );
             }
 
             let sim_instant = base_instant + Duration::from_micros(sim_now);
             let actions = self.framework.process(&[event.event], sim_instant);
 
-            if !matches!(event.event, Event::QueuePopped(_)) {
-                directions.push(if event.event == Event::SendNormal {
-                    Direction::Send
-                } else {
-                    Direction::Receive
-                });
-                timing_deltas.push(sim_now - last_event_ts);
-                sizes.push(event.size);
-                last_event_ts = sim_now;
-            }
-
             for action in actions {
                 match action {
                     IntegratorAction::SendDecoy => {
+                        // TODO: decoy events + size configuration
                         self.queue.push(SimulatorEvent {
                             event: Event::SendNormal,
                             time: sim_now,
@@ -193,31 +189,18 @@ impl<R: Rng> Simulator<R> {
                         });
                     }
                     IntegratorAction::BlockOutgoing(duration) => {
-                        // rust duration micros are u128. change sim to u128 if
-                        // this becomes an issue.
                         #[expect(clippy::cast_possible_truncation)]
                         let end_ts = sim_now + duration.as_micros() as u64;
-                        blocking_until = Some(end_ts);
+                        block_state.block(end_ts);
                     }
                     IntegratorAction::ReleaseBlock => {
-                        blocking_until = None;
-                        while let Some(mut blocked) = blocked_events.pop() {
-                            blocked.time = sim_now;
-                            self.queue.push(blocked);
-                        }
+                        self.queue.extend(block_state.release(sim_now));
                     }
                 }
             }
         }
 
-        // event.time is u64 because it is absolute, the deltas are differences and
-        // should fall in the trace u32. if this becomes a problem, this may change.
-        #[expect(clippy::cast_possible_truncation)]
-        Trace {
-            directions: directions.into(),
-            timing_deltas: timing_deltas.iter().map(|val| *val as u32).collect(),
-            sizes: sizes.into(),
-        }
+        out_builder.build()
     }
 }
 
@@ -269,23 +252,6 @@ mod tests {
             size: 500,
         };
         assert_eq!(early.time.cmp(&early_alt.time), Ordering::Equal);
-    }
-
-    #[test]
-    fn test_pop_soonest_ingress() {
-        let mut queue = SimulatorQueue::default();
-
-        queue.ingress.push(SimulatorEvent {
-            event: Event::ReceiveNormal,
-            time: 50,
-            size: 0,
-        });
-
-        let popped = queue.pop_soonest();
-
-        assert!(popped.is_some());
-        assert_eq!(popped.unwrap().event, Event::ReceiveNormal);
-        assert!(queue.pop_soonest().is_none());
     }
 
     #[test]
