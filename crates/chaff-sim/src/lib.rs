@@ -347,4 +347,36 @@ mod tests {
         assert_eq!(out.timing_deltas[1], 50); // released after time elapsed.
         assert_eq!(out.timing_deltas[2], 10);
     }
+
+    #[test]
+    fn test_send_decoy() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(None, IntegratorAction::SendDecoy.into()),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([Direction::Receive]),
+                timing_deltas: Box::new([0]),
+                sizes: Box::new([100]),
+            },
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 2);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 0);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+    }
 }
