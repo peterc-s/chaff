@@ -1,4 +1,4 @@
-//! Chaff machines
+//! The Chaff [`Machine`].
 
 use std::{borrow::Borrow, time::Instant};
 
@@ -10,7 +10,8 @@ use crate::{
     state::State,
 };
 
-/// The Chaff machine specification.
+/// The Chaff machine specification. Represents a queue automata with [`State`]s and
+/// [`TimedQueue`]s.
 #[derive(Default, Debug, Clone)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
@@ -86,7 +87,8 @@ impl Machine {
     }
 }
 
-/// The runtime for a machine.
+/// The runtime for a [`Machine`]. Tracks the current machine state, holds it's [`TimedQueue`]s, and
+/// any events deferred in [`crate::framework::Framework::process`].
 #[derive(Default, Debug, Clone)]
 pub struct MachineRuntime {
     /// Index into the [`Machine::states`] array.
@@ -111,7 +113,7 @@ impl MachineRuntime {
         }
     }
 
-    /// Pops the action [`TimedQueues`].
+    /// Pops the action [`TimedQueue`]s.
     pub fn pop_queues(&mut self, now: Instant) -> Box<[(u8, Action)]> {
         let mut actions = Vec::new();
 

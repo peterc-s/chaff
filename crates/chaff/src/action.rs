@@ -1,4 +1,5 @@
-//! Chaff actions for integrators to take.
+//! Chaff actions for integrators ([`IntegratorAction`]) and the framework ([`FrameworkAction`]) to
+//! take.
 
 use std::time::Duration;
 

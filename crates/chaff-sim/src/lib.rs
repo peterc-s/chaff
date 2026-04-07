@@ -28,7 +28,6 @@ impl Ord for SimulatorEvent {
     }
 }
 
-// Since we're reversing the order for BinaryHeap
 #[expect(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for SimulatorEvent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -41,12 +40,12 @@ impl PartialOrd for SimulatorEvent {
 pub struct SimulatorQueue(BTreeMap<u64, VecDeque<SimulatorEvent>>);
 
 impl SimulatorQueue {
-    /// TODO
+    /// Peek at the earliest time in the [`SimulatorQueue`], if one exists.
     pub fn peek_time(&self) -> Option<u64> {
         self.0.keys().next().copied()
     }
 
-    /// TODO
+    /// Pop the earliest event from the [`SimulatorQueue`], if one exists.
     pub fn pop(&mut self) -> Option<SimulatorEvent> {
         let mut first_entry = self.0.first_entry()?;
         let bucket = first_entry.get_mut();
@@ -57,7 +56,7 @@ impl SimulatorQueue {
         event
     }
 
-    /// TODO
+    /// Pushes a [`SimulatorEvent`] to the correct point in the [`SimulatorQueue`].
     pub fn push(&mut self, item: SimulatorEvent) {
         self.0.entry(item.time).or_default().push_back(item);
     }
@@ -172,6 +171,7 @@ impl<R: Rng> Simulator<R> {
 
             if !event.event.is_deferred() {
                 out_builder.record(
+                    // TODO: maybe implement TryFrom<Event> for Direction
                     if matches!(event.event, Event::SendNormal | Event::SendDecoy) {
                         Direction::Send
                     } else {

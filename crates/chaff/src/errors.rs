@@ -5,7 +5,7 @@
 
 use std::{error::Error, fmt};
 
-/// Primary error type for the `chaff` crate.
+/// Primary error type for the [`crate`] crate.
 #[derive(Debug)]
 pub enum ChaffError {
     /// Error occurred during validation of a machine spec or its component parts.
