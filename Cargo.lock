@@ -82,6 +82,7 @@ dependencies = [
 name = "chaff-capture"
 version = "0.1.0"
 dependencies = [
+ "chaff",
  "mac_address",
  "pcap",
 ]

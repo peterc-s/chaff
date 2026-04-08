@@ -170,16 +170,9 @@ impl<R: Rng> Simulator<R> {
             }
 
             if !event.event.is_deferred() {
-                out_builder.record(
-                    // TODO: maybe implement TryFrom<Event> for Direction
-                    if matches!(event.event, Event::SendNormal | Event::SendDecoy) {
-                        Direction::Send
-                    } else {
-                        Direction::Receive
-                    },
-                    sim_now,
-                    event.size,
-                );
+                if let Ok(direction) = Direction::try_from(event.event) {
+                    out_builder.record(direction, sim_now, event.size);
+                }
             }
 
             let sim_instant = base_instant + Duration::from_micros(sim_now);

@@ -124,8 +124,6 @@ mod tests {
 
         assert_eq!(scheduled_0, scheduled_1);
 
-        // TODO: can `Scheduled` defer to the inner's eq?
-
         let timed_action = TimedAction {
             action: IntegratorAction::SendDecoy.into(),
             execute_at: now + Duration::from_secs(1),
