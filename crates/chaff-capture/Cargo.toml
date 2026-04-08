@@ -17,6 +17,7 @@ workspace = true
 default = []
 
 [dependencies]
+chaff = { version = "0.1.0", path = "../chaff/" }
 mac_address = "1.1.8"
 pcap = "2.4.0"
 

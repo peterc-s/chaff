@@ -23,6 +23,9 @@ pub enum CaptureError {
 
     /// Errors relating to trace serialisation and deserialisation.
     Trace(TraceError),
+
+    /// Conversion between types is not possible.
+    CantConvert,
 }
 
 impl Error for CaptureError {
@@ -30,6 +33,7 @@ impl Error for CaptureError {
         match self {
             Self::Device(e) => Some(e),
             Self::Trace(e) => Some(e),
+            _ => None,
         }
     }
 }
@@ -39,6 +43,7 @@ impl fmt::Display for CaptureError {
         match self {
             Self::Device(e) => write!(f, "device error: {e}"),
             Self::Trace(e) => write!(f, "trace error: {e}"),
+            Self::CantConvert => write!(f, "conversion between types failed"),
         }
     }
 }

@@ -6,7 +6,9 @@ use std::{
     path::Path,
 };
 
-use crate::errors::TraceError;
+use chaff::event::Event;
+
+use crate::errors::{CaptureError, TraceError};
 
 /// Packet direction.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -16,6 +18,18 @@ pub enum Direction {
 
     /// From server to client.
     Receive,
+}
+
+impl TryFrom<Event> for Direction {
+    type Error = CaptureError;
+
+    fn try_from(value: Event) -> Result<Self, Self::Error> {
+        match value {
+            Event::SendNormal | Event::SendDecoy => Ok(Self::Send),
+            Event::ReceiveNormal | Event::ReceiveDecoy => Ok(Self::Receive),
+            Event::QueuePopped(_) => Err(CaptureError::CantConvert),
+        }
+    }
 }
 
 /// A builder for [`Trace`]. Allows building up a [`Trace`] by repeatedly adding packets to the end
