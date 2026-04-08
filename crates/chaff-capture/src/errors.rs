@@ -33,7 +33,7 @@ impl Error for CaptureError {
         match self {
             Self::Device(e) => Some(e),
             Self::Trace(e) => Some(e),
-            _ => None,
+            Self::CantConvert => None,
         }
     }
 }
