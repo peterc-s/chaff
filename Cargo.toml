@@ -6,7 +6,7 @@ keywords = [ "privacy", "fingerprinting", "security", "anonymity" ]
 categories = [ "network-programming" ]
 
 # In line with Arti: https://gitlab.torproject.org/tpo/core/arti/-/tree/main#minimum-supported-rust-version
-rust-version = "1.86.0"
+rust-version = "1.89.0"
 
 
 [workspace]

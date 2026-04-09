@@ -155,10 +155,10 @@ impl<R: Rng> Simulator<R> {
         let base_instant = Instant::now();
 
         loop {
-            if let Some(until) = block_state.until {
-                if self.queue.peek_time().is_none_or(|t| until <= t) {
-                    self.queue.extend(block_state.release(until));
-                }
+            if let Some(until) = block_state.until
+                && self.queue.peek_time().is_none_or(|t| until <= t)
+            {
+                self.queue.extend(block_state.release(until));
             }
 
             let Some(event) = self.queue.pop() else { break };
@@ -169,10 +169,10 @@ impl<R: Rng> Simulator<R> {
                 continue;
             }
 
-            if !event.event.is_deferred() {
-                if let Ok(direction) = Direction::try_from(event.event) {
-                    out_builder.record(direction, sim_now, event.size);
-                }
+            if !event.event.is_deferred()
+                && let Ok(direction) = Direction::try_from(event.event)
+            {
+                out_builder.record(direction, sim_now, event.size);
             }
 
             let sim_instant = base_instant + Duration::from_micros(sim_now);
