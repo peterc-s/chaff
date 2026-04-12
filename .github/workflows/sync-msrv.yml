@@ -52,7 +52,7 @@ jobs:
           fi
 
       - name: Create PR
-        if: steps.update.outputs.changes == 'true'
+        if: steps.update.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore: update MSRV to ${{ steps.update.outputs.new_msrv }} to match Arti"
