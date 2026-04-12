@@ -32,11 +32,7 @@ where
     }
 
     fn dyn_eq(&self, other: &dyn DynDurationDistr) -> bool {
-        if let Some(other_concrete) = other.as_any().downcast_ref::<Self>() {
-            self == other_concrete
-        } else {
-            false
-        }
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
 }
 

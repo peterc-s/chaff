@@ -119,7 +119,7 @@ mod tests {
             execute_at: now,
         };
 
-        let scheduled_0 = Scheduled(timed_action);
+        let scheduled_0 = Scheduled(timed_action.clone());
         let scheduled_1 = Scheduled(timed_action);
 
         assert_eq!(scheduled_0, scheduled_1);

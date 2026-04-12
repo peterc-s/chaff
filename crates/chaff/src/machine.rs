@@ -135,10 +135,11 @@ impl MachineRuntime {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::time::Duration;
+    use std::{rc::Rc, time::Duration};
 
     use crate::{
-        action::IntegratorAction, event::Event, framework::Framework, state::TransitionProbs,
+        action::IntegratorAction, distr::Constant, event::Event, framework::Framework,
+        state::TransitionProbs,
     };
 
     use super::*;
@@ -215,7 +216,7 @@ mod tests {
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 1,
-                        delay: Duration::from_secs(1),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
                     }
                     .into(),
                 ),
@@ -239,7 +240,7 @@ mod tests {
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
-                        delay: Duration::from_secs(1),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
                     }
                     .into(),
                 ),
@@ -273,7 +274,7 @@ mod tests {
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
-                        delay: Duration::from_secs(1),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
                     }
                     .into(),
                 ),

@@ -212,9 +212,10 @@ impl<R: Rng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, rc::Rc};
 
     use chaff::{
+        distr::Constant,
         machine::Machine,
         state::{State, TransitionProbs},
     };
@@ -229,7 +230,7 @@ mod tests {
             sizes: Box::new([100, 200, 300]),
         };
         let framework = Framework::new(Machine::default(), rand::rng());
-        let mut sim: Simulator<_> = Simulator::with(framework, trace.clone());
+        let mut sim: Simulator<_> = Simulator::with(framework, trace.clone(), rand::rng());
 
         let out_trace = sim.run();
 
@@ -256,7 +257,7 @@ mod tests {
             let in_trace = Trace::deserialise(&path).unwrap();
 
             let framework = Framework::new(Machine::default(), rand::rng());
-            let mut sim = Simulator::with(framework, in_trace.clone());
+            let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
             let out_trace = sim.run();
 
             assert_eq!(in_trace, out_trace);
@@ -302,7 +303,8 @@ mod tests {
                 State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock.into()),
                 State::new(
                     Some(trans_1_to_2),
-                    IntegratorAction::BlockOutgoing(Duration::from_secs(999)).into(),
+                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_secs(999))))
+                        .into(),
                 ),
                 State::new(None, IntegratorAction::ReleaseBlock.into()),
             ],
@@ -322,6 +324,7 @@ mod tests {
                 timing_deltas: Box::new([0, 10, 10, 10]),
                 sizes: Box::new([100, 100, 100, 100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();
@@ -356,7 +359,8 @@ mod tests {
                 State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
                 State::new(
                     None,
-                    IntegratorAction::BlockOutgoing(Duration::from_micros(50)).into(),
+                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_micros(50))))
+                        .into(),
                 ),
             ],
             0,
@@ -374,6 +378,7 @@ mod tests {
                 timing_deltas: Box::new([0, 10, 50]),
                 sizes: Box::new([100, 100, 100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();
@@ -405,6 +410,7 @@ mod tests {
                 timing_deltas: Box::new([0]),
                 sizes: Box::new([100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();

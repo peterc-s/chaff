@@ -131,11 +131,12 @@ impl<R: Rng> Framework<R> {
 #[expect(clippy::unwrap_used)]
 #[expect(clippy::expect_used)]
 mod tests {
-    use std::time::Duration;
+    use std::{rc::Rc, time::Duration};
 
     use super::*;
     use crate::{
         action::{FrameworkAction, IntegratorAction},
+        distr::Constant,
         event::Event,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -342,7 +343,7 @@ mod tests {
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 0,
-                        delay: Duration::from_secs(999),
+                        delay: Rc::new(Constant(Duration::from_secs(999))),
                     }
                     .into(),
                 ),
@@ -377,7 +378,7 @@ mod tests {
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 0,
-                        delay: Duration::from_secs(999),
+                        delay: Rc::new(Constant(Duration::from_secs(999))),
                     }
                     .into(),
                 ),
@@ -483,7 +484,7 @@ mod tests {
             action: FrameworkAction::Schedule {
                 action: IntegratorAction::SendDecoy,
                 queue: 1,
-                delay: Duration::ZERO,
+                delay: Rc::new(Constant(Duration::ZERO)),
             }
             .into(),
         });
