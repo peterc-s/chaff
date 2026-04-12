@@ -47,12 +47,12 @@ impl<R: Rng> Framework<R> {
     fn perform_action(&mut self, action: FrameworkAction, now: Instant) {
         match action {
             FrameworkAction::Schedule {
-                action,
+                action: int_action,
                 queue,
                 delay,
             } => self.runtime.queues[queue as usize].push(TimedAction {
-                execute_at: now + delay,
-                action: action.into(),
+                execute_at: now + delay.sample_dyn(&mut self.rng),
+                action: int_action.clone().into(),
             }),
             FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),
             FrameworkAction::CancelAll => {
@@ -85,40 +85,38 @@ impl<R: Rng> Framework<R> {
             {
                 self.runtime.state = new_state;
 
-                match self.machine.states[new_state].action {
+                match &self.machine.states[new_state].action {
                     Action::Framework(framework_action) => {
-                        framework_actions.push(framework_action);
+                        framework_actions.push(framework_action.clone());
                     }
                     Action::Integrator(integrator_action) => {
-                        integrator_actions.push(integrator_action);
+                        integrator_actions.push(integrator_action.clone());
                     }
                 }
             }
         }
 
         // pop queues
-        self.runtime
-            .pop_queues(now)
-            .iter()
-            .for_each(|(idx, action)| {
-                new_deferred_events.push(Event::QueuePopped(*idx));
-                match action {
-                    Action::Framework(framework_action) => {
-                        framework_actions.push(*framework_action);
-                    }
-                    Action::Integrator(integrator_action) => {
-                        integrator_actions.push(*integrator_action);
-                    }
+        let queue_popped_binding = self.runtime.pop_queues(now);
+        queue_popped_binding.iter().for_each(|(idx, action)| {
+            new_deferred_events.push(Event::QueuePopped(*idx));
+            match action {
+                Action::Framework(framework_action) => {
+                    framework_actions.push(framework_action.clone());
                 }
-            });
+                Action::Integrator(integrator_action) => {
+                    integrator_actions.push(integrator_action.clone());
+                }
+            }
+        });
 
         // set new deferred events
         self.runtime.deferred_events = new_deferred_events;
 
         // perform framework actions
-        for action in framework_actions {
-            self.perform_action(action, now);
-        }
+        framework_actions
+            .drain(..)
+            .for_each(|action| self.perform_action(action, now));
 
         integrator_actions.into_boxed_slice()
     }

@@ -103,6 +103,9 @@ pub struct Simulator<R: Rng> {
 
     /// The simulated queues, filled with a [`Trace`].
     queue: SimulatorQueue,
+
+    /// The [`Rng`] used for [`IntegratorAction`]s.
+    rng: R,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -139,11 +142,12 @@ impl BlockState {
 impl<R: Rng> Simulator<R> {
     /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
     /// [`Trace`] to run the simulation on.
-    pub fn with(framework: Framework<R>, trace: Trace) -> Self {
+    pub fn with(framework: Framework<R>, trace: Trace, rng: R) -> Self {
         Self {
             framework,
             trace,
             queue: SimulatorQueue::default(),
+            rng,
         }
     }
 
@@ -190,7 +194,8 @@ impl<R: Rng> Simulator<R> {
                     }
                     IntegratorAction::BlockOutgoing(duration) => {
                         #[expect(clippy::cast_possible_truncation)]
-                        let end_ts = sim_now + duration.as_micros() as u64;
+                        let end_ts =
+                            sim_now + duration.sample_dyn(&mut self.rng).as_micros() as u64;
                         block_state.block(end_ts);
                     }
                     IntegratorAction::ReleaseBlock => {

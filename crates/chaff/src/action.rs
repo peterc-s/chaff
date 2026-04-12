@@ -1,10 +1,12 @@
 //! Chaff actions for integrators ([`IntegratorAction`]) and the framework ([`FrameworkAction`]) to
 //! take.
 
-use std::time::Duration;
+use std::rc::Rc;
+
+use crate::distr::DynDurationDistr;
 
 /// Actions the framework should take.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameworkAction {
     /// Schedule an [`IntegratorAction`] to expire after a delay on the given queue.
     Schedule {
@@ -15,7 +17,7 @@ pub enum FrameworkAction {
         queue: u8,
 
         /// The delay for scheduling.
-        delay: Duration,
+        delay: Rc<dyn DynDurationDistr>,
     },
 
     /// Cancel all actions on a given queue.
@@ -26,20 +28,20 @@ pub enum FrameworkAction {
 }
 
 /// Actions an integrator should take.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntegratorAction {
     /// Send a decoy packet.
     SendDecoy,
 
     /// Block outgoing packets for the given duration.
-    BlockOutgoing(Duration),
+    BlockOutgoing(Rc<dyn DynDurationDistr>),
 
     /// Release any existing block on outgoing packets.
     ReleaseBlock,
 }
 
 /// An enum with each of the actions Chaff requires an integrator to make.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// An action for the framework to take, see [`FrameworkAction`].
     Framework(FrameworkAction),

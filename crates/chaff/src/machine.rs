@@ -50,7 +50,7 @@ impl Machine {
         // non-existent queues
         let invalid_state_action_queues = states
             .iter()
-            .map(|state| state.action)
+            .map(|state| state.action.clone())
             .filter_map(|action| match action {
                 Action::Framework(framework_action) => match framework_action {
                     FrameworkAction::Schedule { queue, .. }
@@ -124,7 +124,7 @@ impl MachineRuntime {
                 queue
                     .pop_ready(now)
                     .iter()
-                    .map(|timed_action| (idx as u8, timed_action.action)),
+                    .map(|timed_action| (idx as u8, timed_action.action.clone())),
             );
         }
 

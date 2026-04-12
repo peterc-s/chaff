@@ -39,7 +39,7 @@ impl<T: Timed> Ord for Scheduled<T> {
 }
 
 /// An [`Action`] that implements [`Timed`] for use with the [`TimedQueue`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TimedAction {
     /// When to execute the action (see [`Timed::execute_at`]).
     pub execute_at: Instant,

@@ -118,7 +118,7 @@ fn run() -> Result<(), CliError> {
             let trace = Trace::deserialise(&input)?;
             let machine = construct_test_machine();
             let framework = Framework::new(machine, rand::rng());
-            let mut sim: Simulator<_> = Simulator::with(framework, trace);
+            let mut sim: Simulator<_> = Simulator::with(framework, trace, rand::rng());
 
             println!("{}", sim.run());
             println!("{}", sim.framework.get_state());

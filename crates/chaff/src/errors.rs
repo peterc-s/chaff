@@ -41,6 +41,9 @@ pub enum ValidationError {
 
     /// Multiple [`ValidationError`]s exist.
     Multiple(Box<[Self]>),
+
+    /// A minimum value exceeds a maximum value when it should not.
+    MinExceedsMax(String),
 }
 
 impl Error for ValidationError {
@@ -72,6 +75,7 @@ impl fmt::Display for ValidationError {
 
                 Ok(())
             }
+            ValidationError::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
         }
     }
 }
