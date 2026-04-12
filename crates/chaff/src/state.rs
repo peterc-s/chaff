@@ -59,9 +59,18 @@ pub struct TransitionProbs(pub HashMap<Event, Transition>);
 impl TransitionProbs {
     /// Construct a new [`TransitionProbs`] using the given [`Event`] to [`Transition`] mapping pairs.
     ///
-    /// Trying to map the same [`Event`]
+    /// # Caveat
+    ///
+    /// Trying to map the same [`Event`] multiple times will result in only the last mapping being
+    /// applied.
+    ///
+    /// # Errors
+    ///
+    /// Can give a [`ValidationError::BadTransitionProbs`] if the given transition probabilities sum
+    /// up to a value outside of the `0.0..=1.0` range.
     ///
     /// # Example
+    ///
     /// ```rust
     /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
     ///
@@ -82,7 +91,49 @@ impl TransitionProbs {
         }
     }
 
+    /// Construct a new [`TransitionProbs`] using an array of tuples.
+    ///
+    /// The same caveat in [`TransitionProbs::new`] applies here.
+    ///
+    /// # Errors
+    ///
+    /// If an individual transition probability or sum of transition probabilities fall outside of
+    /// the `0.0..=1.0` range, will throw a [`ValidationError::BadTransitionProbs`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
+    ///
+    /// let trans_probs = TransitionProbs::from_tuples([
+    ///     (Event::SendNormal, (1, 0.5)),
+    ///     (Event::QueuePopped(1), (2, 0.5)),
+    /// ]).unwrap();
+    /// ```
+    pub fn from_tuples<const N: usize>(
+        transitions: [(Event, (usize, f32)); N],
+    ) -> Result<Self, ValidationError> {
+        let mut valid_transitions = vec![];
+        let mut validation_errors = vec![];
+
+        for (event, target_tuple) in transitions {
+            match target_tuple.try_into() {
+                Ok(target_prob) => valid_transitions.push((event, target_prob)),
+                Err(err) => validation_errors.push(err),
+            }
+        }
+
+        if !validation_errors.is_empty() {
+            return Err(ValidationError::Multiple(
+                validation_errors.into_boxed_slice(),
+            ));
+        }
+
+        Self::new(valid_transitions)
+    }
+
     /// Try to get the [`Transition`] associated with the given [`Event`].
+    #[must_use]
     pub fn get(&self, event: Event) -> Option<Transition> {
         self.0.get(&event).copied()
     }

@@ -35,12 +35,14 @@ impl PartialOrd for SimulatorEvent {
     }
 }
 
-/// Thin wrapper around a [`BinaryHeap<SimulatorEvent>`] for implementing [`From<Trace>`].
+/// Wrapper around a [`BTreeMap`] with [`u64`] keys and [`VecDeque<SimulatorQueue>`] values for
+/// using [`Trace`]s with the [`Simulator`].
 #[derive(Default, Debug, Clone)]
 pub struct SimulatorQueue(BTreeMap<u64, VecDeque<SimulatorEvent>>);
 
 impl SimulatorQueue {
     /// Peek at the earliest time in the [`SimulatorQueue`], if one exists.
+    #[must_use]
     pub fn peek_time(&self) -> Option<u64> {
         self.0.keys().next().copied()
     }
@@ -151,7 +153,8 @@ impl<R: Rng> Simulator<R> {
         }
     }
 
-    /// Run the simulation. This instantiates internal queues with the [`Simulator::trace`].
+    /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
+    /// [`Trace`].
     pub fn run(&mut self) -> Trace {
         self.queue = SimulatorQueue::from(self.trace.clone());
         let mut block_state = BlockState::default();

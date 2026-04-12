@@ -81,6 +81,13 @@ impl Machine {
     }
 
     /// Create a new [`Machine`] with the given states.
+    ///
+    /// # Errors
+    ///
+    /// Errors with a [`ValidationError`] if any validation fails. This may be because there are
+    /// invalid transitions ([`ValidationError::TransitionToInvalidState`]), because there are state
+    /// actions that would try to interact with non-existent queues
+    /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
     pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
         Self::validate(&states, queues)?;
         Ok(Self { states, queues })

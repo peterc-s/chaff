@@ -67,6 +67,7 @@ pub struct TimedQueue<T: Timed> {
 
 impl<T: Timed> TimedQueue<T> {
     /// Create a new, empty [`TimedQueue`].
+    #[must_use]
     pub fn new() -> Self {
         Self {
             queue: BinaryHeap::new(),
@@ -97,6 +98,7 @@ impl<T: Timed> TimedQueue<T> {
     }
 
     /// Check if the queue is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }

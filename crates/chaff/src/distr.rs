@@ -90,6 +90,10 @@ where
     T: Ord + Copy + Debug,
 {
     /// Create a new bounded offset distribution, wrapping a [`Distribution<T>`].
+    ///
+    /// # Errors
+    ///
+    /// Will throw a [`ValidationError::MinExceedsMax`] if the `min` argument exceeds the `max` argument.
     pub fn new(
         distr: D,
         offset: Option<T>,
