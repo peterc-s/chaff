@@ -75,7 +75,7 @@ impl fmt::Display for ValidationError {
 
                 Ok(())
             }
-            ValidationError::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
+            Self::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
         }
     }
 }

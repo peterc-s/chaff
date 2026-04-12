@@ -52,7 +52,7 @@ impl<R: Rng> Framework<R> {
                 delay,
             } => self.runtime.queues[queue as usize].push(TimedAction {
                 execute_at: now + delay.sample_dyn(&mut self.rng),
-                action: int_action.clone().into(),
+                action: int_action.into(),
             }),
             FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),
             FrameworkAction::CancelAll => {
@@ -114,9 +114,9 @@ impl<R: Rng> Framework<R> {
         self.runtime.deferred_events = new_deferred_events;
 
         // perform framework actions
-        framework_actions
-            .drain(..)
-            .for_each(|action| self.perform_action(action, now));
+        for action in framework_actions {
+            self.perform_action(action, now);
+        }
 
         integrator_actions.into_boxed_slice()
     }
