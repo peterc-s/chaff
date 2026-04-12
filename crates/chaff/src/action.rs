@@ -55,6 +55,13 @@ pub enum IntegratorAction {
     ReleaseBlock,
 }
 
+impl IntegratorAction {
+    /// Ergonomic constructor for [`IntegratorAction::BlockOutgoing`].
+    pub fn block_outgoing(delay: impl IntoDurationDistr) -> Self {
+        Self::BlockOutgoing(delay.into_duration_distr())
+    }
+}
+
 /// An enum with each of the actions Chaff requires an integrator to make.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {

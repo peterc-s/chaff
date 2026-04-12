@@ -215,10 +215,9 @@ impl<R: Rng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{fs, path::PathBuf, rc::Rc};
+    use std::{fs, path::PathBuf};
 
     use chaff::{
-        distr::Constant,
         machine::Machine,
         state::{State, TransitionProbs},
     };
@@ -306,7 +305,7 @@ mod tests {
                 State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
                 State::new(
                     Some(trans_1_to_2),
-                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_secs(999)))),
+                    IntegratorAction::block_outgoing(Duration::from_secs(999)),
                 ),
                 State::new(None, IntegratorAction::ReleaseBlock),
             ],
@@ -361,7 +360,7 @@ mod tests {
                 State::new(Some(trans), IntegratorAction::ReleaseBlock),
                 State::new(
                     None,
-                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_micros(50)))),
+                    IntegratorAction::block_outgoing(Duration::from_micros(50)),
                 ),
             ],
             0,
