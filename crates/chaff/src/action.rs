@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use crate::distr::DynDurationDistr;
+use crate::distr::{DynDurationDistr, IntoDurationDistr};
 
 /// Actions the framework should take.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +25,21 @@ pub enum FrameworkAction {
 
     /// Cancel all actions on all queues.
     CancelAll,
+}
+
+impl FrameworkAction {
+    /// Create a new [`FrameworkAction::Schedule`] with given action, queue, and delay.
+    pub fn schedule(
+        action: impl Into<IntegratorAction>,
+        queue: u8,
+        delay: impl IntoDurationDistr,
+    ) -> Self {
+        Self::Schedule {
+            action: action.into(),
+            queue,
+            delay: delay.into_duration_distr(),
+        }
+    }
 }
 
 /// Actions an integrator should take.

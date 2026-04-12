@@ -131,12 +131,11 @@ impl<R: Rng> Framework<R> {
 #[expect(clippy::unwrap_used)]
 #[expect(clippy::expect_used)]
 mod tests {
-    use std::{rc::Rc, time::Duration};
+    use std::time::Duration;
 
     use super::*;
     use crate::{
         action::{FrameworkAction, IntegratorAction},
-        distr::Constant,
         event::Event,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -148,11 +147,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(
-                    Some(trans_probs.clone()),
-                    IntegratorAction::SendDecoy.into(),
-                ),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             0,
         )
@@ -169,11 +165,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(
-                    Some(trans_probs.clone()),
-                    IntegratorAction::SendDecoy.into(),
-                ),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             0,
         )
@@ -195,11 +188,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(
-                    Some(trans_probs.clone()),
-                    IntegratorAction::SendDecoy.into(),
-                ),
-                State::new(None, FrameworkAction::CancelAll.into()),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
+                State::new(None, FrameworkAction::CancelAll),
             ],
             0,
         )
@@ -217,11 +207,7 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_invalid_state() {
-        let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy.into())],
-            0,
-        )
-        .unwrap();
+        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 0).unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         // force bad behaviour
@@ -232,11 +218,7 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_state_with_no_trans_probs() {
-        let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy.into())],
-            0,
-        )
-        .unwrap();
+        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 0).unwrap();
 
         let framework = Framework::new(machine, rand::rng());
 
@@ -251,8 +233,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             0,
         )
@@ -273,8 +255,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, FrameworkAction::CancelAll.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, FrameworkAction::CancelAll),
             ],
             2,
         )
@@ -302,8 +284,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, FrameworkAction::CancelQueue(0).into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, FrameworkAction::CancelQueue(0)),
             ],
             2,
         )
@@ -337,15 +319,14 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans_probs), IntegratorAction::ReleaseBlock),
                 State::new(
                     None,
-                    FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 0,
-                        delay: Rc::new(Constant(Duration::from_secs(999))),
-                    }
-                    .into(),
+                    FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        0,
+                        Duration::from_secs(999),
+                    ),
                 ),
             ],
             1,
@@ -372,15 +353,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
                 State::new(
                     None,
-                    FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 0,
-                        delay: Rc::new(Constant(Duration::from_secs(999))),
-                    }
-                    .into(),
+                    FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        0,
+                        Duration::from_secs(999),
+                    ),
                 ),
             ],
             1,
@@ -403,11 +383,7 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_all_via_queue() {
-        let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy.into())],
-            3,
-        )
-        .unwrap();
+        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 3).unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -434,11 +410,7 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_queue_via_queue() {
-        let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy.into())],
-            2,
-        )
-        .unwrap();
+        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 2).unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -469,11 +441,7 @@ mod tests {
 
     #[test]
     fn test_perform_action_schedule_via_queue() {
-        let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy.into())],
-            2,
-        )
-        .unwrap();
+        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 2).unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -481,12 +449,8 @@ mod tests {
 
         framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
-            action: FrameworkAction::Schedule {
-                action: IntegratorAction::SendDecoy,
-                queue: 1,
-                delay: Rc::new(Constant(Duration::ZERO)),
-            }
-            .into(),
+            action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, Duration::ZERO)
+                .into(),
         });
 
         // queues should get popped, schedule action should be processed as it
@@ -510,8 +474,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::ReleaseBlock),
             ],
             1,
         )
@@ -562,9 +526,9 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::SendDecoy.into()),
-                State::new(Some(trans_1_to_2), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans_0_to_1), IntegratorAction::SendDecoy),
+                State::new(Some(trans_1_to_2), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::ReleaseBlock),
             ],
             1,
         )

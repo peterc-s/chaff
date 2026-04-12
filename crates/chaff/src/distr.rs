@@ -1,7 +1,7 @@
 //! Provides the [`DynDurationDistr`] trait alongside some [`Distribution`] wrappers for random
 //! packet delays and decoy sizing.
 
-use std::{any::Any, fmt::Debug, ops::Add, time::Duration};
+use std::{any::Any, fmt::Debug, ops::Add, rc::Rc, time::Duration};
 
 use rand::{Rng, RngCore, distr::Distribution};
 
@@ -49,6 +49,31 @@ impl PartialEq for dyn DynDurationDistr {
 }
 
 impl Eq for dyn DynDurationDistr {}
+
+/// Helper trait to allow users to pass [`Duration`]s, [`Rc<dyn DynDurationDistr>`]s, or
+/// [`Constant<Duration>`]s to certain methods.
+pub trait IntoDurationDistr {
+    /// Convert into an [`Rc<dyn DynDurationDistr>`].
+    fn into_duration_distr(self) -> Rc<dyn DynDurationDistr>;
+}
+
+impl IntoDurationDistr for Duration {
+    fn into_duration_distr(self) -> Rc<dyn DynDurationDistr> {
+        Rc::new(Constant(self))
+    }
+}
+
+impl IntoDurationDistr for Rc<dyn DynDurationDistr> {
+    fn into_duration_distr(self) -> Rc<dyn DynDurationDistr> {
+        self
+    }
+}
+
+impl IntoDurationDistr for Constant<Duration> {
+    fn into_duration_distr(self) -> Rc<dyn DynDurationDistr> {
+        Rc::new(self)
+    }
+}
 
 /// A wrapper around a struct that implements [`Distribution<T>`] with an optional offset, minimum,
 /// and maximum value (both inclusive).

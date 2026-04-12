@@ -151,8 +151,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             42,
         )
@@ -189,8 +189,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             42,
         );
@@ -210,15 +210,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 1,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }
-                    .into(),
+                    },
                 ),
             ],
             1,
@@ -234,15 +233,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }
-                    .into(),
+                    },
                 ),
             ],
             1,
@@ -268,15 +266,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }
-                    .into(),
+                    },
                 ),
             ],
             1,

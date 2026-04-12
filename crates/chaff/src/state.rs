@@ -18,10 +18,10 @@ pub struct State {
 
 impl State {
     /// Create a new state with the given [`TransitionProbs`] and [`Action`] to take on transition.
-    pub fn new(trans_probs: Option<TransitionProbs>, action: Action) -> Self {
+    pub fn new(trans_probs: impl Into<Option<TransitionProbs>>, action: impl Into<Action>) -> Self {
         Self {
-            trans_probs,
-            action,
+            trans_probs: trans_probs.into(),
+            action: action.into(),
         }
     }
 }

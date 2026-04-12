@@ -300,13 +300,12 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
                 State::new(
                     Some(trans_1_to_2),
-                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_secs(999))))
-                        .into(),
+                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_secs(999)))),
                 ),
-                State::new(None, IntegratorAction::ReleaseBlock.into()),
+                State::new(None, IntegratorAction::ReleaseBlock),
             ],
             0,
         )
@@ -356,11 +355,10 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock),
                 State::new(
                     None,
-                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_micros(50))))
-                        .into(),
+                    IntegratorAction::BlockOutgoing(Rc::new(Constant(Duration::from_micros(50)))),
                 ),
             ],
             0,
@@ -396,8 +394,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             0,
         )
