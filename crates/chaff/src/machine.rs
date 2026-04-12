@@ -94,6 +94,75 @@ impl Machine {
     }
 }
 
+/// Create a machine with named states.
+///
+/// # Example
+///
+/// ```rust
+/// use chaff::{machine, action::IntegratorAction, event::Event};
+///
+/// let machine_result = machine! {
+///     num_queues: 0,
+///     
+///     state Init {
+///         action: IntegratorAction::SendDecoy,
+///         transitions: [
+///             Event::SendNormal => (End, 0.5),
+///         ]
+///     },
+///     
+///     state End {
+///         action: IntegratorAction::SendDecoy
+///     }
+/// }.unwrap();
+/// ```
+#[macro_export]
+macro_rules! machine {
+    (
+        num_queues: $queues:expr,
+        $(
+            state $name:ident {
+                action: $action:expr
+                $(, transitions: [ $( $event:expr => ($target:ident, $prob:expr) ),* $(,)? ] )?
+                $(,)?
+            }
+        ),* $(,)?
+    ) => {{
+        (|| -> Result<$crate::machine::Machine, $crate::errors::ValidationError> {
+            // assign sequential indices
+            #[expect(unused_variables)]
+            let ($( $name, )*) = {
+                let mut _idx = 0usize;
+                $(
+                    let $name = _idx;
+                    _idx += 1;
+                )*
+                ($( $name, )*)
+            };
+
+            let mut states = Vec::new();
+
+            // build states
+            $(
+                let mut _probs = ::core::option::Option::<$crate::state::TransitionProbs>::None;
+
+                $(
+                    _probs = ::core::option::Option::Some(
+                        $crate::state::TransitionProbs::from_tuples([
+                            $( ($event, ($target, $prob)) ),*
+                        ])?
+                    );
+                )?
+
+                states.push($crate::state::State::new(_probs, $action));
+            )*
+
+            // build the machine
+            $crate::machine::Machine::new(states, $queues)
+        })()
+    }};
+}
+
 /// The runtime for a [`Machine`]. Tracks the current machine state, holds it's [`TimedQueue`]s, and
 /// any events deferred in [`crate::framework::Framework::process`].
 #[derive(Default, Debug, Clone)]
