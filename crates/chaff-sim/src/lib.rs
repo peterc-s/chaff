@@ -214,13 +214,15 @@ impl<R: Rng> Simulator<R> {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, rc::Rc};
 
     use chaff::{
         machine::Machine,
         state::{State, TransitionProbs},
     };
+    use rand::{SeedableRng as _, distr::Uniform, rngs::SmallRng};
 
     use super::*;
 
@@ -420,5 +422,50 @@ mod tests {
         assert_eq!(out.timing_deltas[1], 0);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
+    }
+
+    /// This test exists mostly because all other tests use [`chaff::distr::Constant`] and the standard
+    /// [`rand::rng()`].
+    #[test]
+    fn test_with_uniform_distribution() {
+        let uniform = Uniform::new(Duration::from_micros(110), Duration::from_micros(160))
+            .expect("valid uniform range");
+
+        let trans_0_to_1 =
+            TransitionProbs::from_tuples([(Event::ReceiveNormal, (1, 1.0))]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::BlockOutgoing(Rc::new(uniform))),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let framework = Framework::new(machine, SmallRng::from_seed([0; 32]));
+
+        let input_trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Send, Direction::Send]),
+            timing_deltas: Box::new([0, 10, 100]),
+            sizes: Box::new([100, 100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, input_trace, SmallRng::from_seed([0; 32]));
+        let output_trace = sim.run();
+
+        // expected:
+        // recv @ 0, trigger random block outgoing
+        // send @ random, random block released
+        // send @ random, should have also been blocked and then released immediately
+
+        assert_eq!(output_trace.directions.len(), 3);
+        assert_eq!(output_trace.directions[0], Direction::Receive);
+
+        let elapsed: u32 = output_trace.timing_deltas.iter().sum();
+        assert!(
+            elapsed > 110,
+            "total time should be extended due to random block."
+        );
     }
 }
