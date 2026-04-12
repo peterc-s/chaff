@@ -137,6 +137,7 @@ mod tests {
     use crate::{
         action::{FrameworkAction, IntegratorAction},
         event::Event,
+        machine,
         machine::Machine,
         state::{State, TransitionProbs},
     };
@@ -315,22 +316,20 @@ mod tests {
 
     #[test]
     fn test_perform_action_schedule() {
-        let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
-        let machine = Machine::new(
-            vec![
-                State::new(Some(trans_probs), IntegratorAction::ReleaseBlock),
-                State::new(
-                    None,
-                    FrameworkAction::schedule(
-                        IntegratorAction::SendDecoy,
-                        0,
-                        Duration::from_secs(999),
-                    ),
+        let machine = machine! {
+            num_queues: 1,
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::SendNormal => (schedule_decoy, 1.0)],
+            },
+            state schedule_decoy {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    Duration::from_secs(999)
                 ),
-            ],
-            1,
-        )
+            }
+        }
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -469,16 +468,16 @@ mod tests {
 
     #[test]
     fn test_deferred_queue_popped_event_ordering() {
-        let trans_probs =
-            TransitionProbs::new([(Event::QueuePopped(0), (1, 1.0).try_into().unwrap())]).unwrap();
-
-        let machine = Machine::new(
-            vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::ReleaseBlock),
-            ],
-            1,
-        )
+        let machine = machine! {
+            num_queues: 1,
+            state wait_pop {
+                action: IntegratorAction::SendDecoy,
+                transitions: [Event::QueuePopped(0) => (release, 1.0)],
+            },
+            state release {
+                action: IntegratorAction::ReleaseBlock
+            }
+        }
         .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
@@ -519,19 +518,20 @@ mod tests {
 
     #[test]
     fn test_deferred_events_happen_before_new_events() {
-        let trans_0_to_1 =
-            TransitionProbs::new([(Event::QueuePopped(0), (1, 1.0).try_into().unwrap())]).unwrap();
-        let trans_1_to_2 =
-            TransitionProbs::new([(Event::SendNormal, (2, 1.0).try_into().unwrap())]).unwrap();
-
-        let machine = Machine::new(
-            vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::SendDecoy),
-                State::new(Some(trans_1_to_2), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::ReleaseBlock),
-            ],
-            1,
-        )
+        let machine = machine! {
+            num_queues: 1,
+            state init {
+                action: IntegratorAction::SendDecoy,
+                transitions: [Event::QueuePopped(0) => (jump, 1.0)],
+            },
+            state jump {
+                action: IntegratorAction::SendDecoy,
+                transitions: [Event::SendNormal => (end, 1.0)],
+            },
+            state end {
+                action: IntegratorAction::ReleaseBlock,
+            }
+        }
         .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
@@ -545,8 +545,8 @@ mod tests {
         framework.process(&[], now);
         framework.process(&[Event::SendNormal], now);
 
-        // can only reach state 2 via state 1. can only reach state 1 for the Event::SendNormal
-        // trigger to transition to state 2 if deferred event processed first.
+        // can only reach state end via state jump. can only reach state jump for the Event::SendNormal
+        // trigger to transition to state end if deferred event processed first.
         assert_eq!(
             framework.get_state(),
             2,
