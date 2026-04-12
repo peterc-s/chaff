@@ -53,7 +53,7 @@
         # - in the README
         # - in the workspace Cargo.toml
         # This should follow Arti.
-        toolchainMsrv = pkgs.rust-bin.stable."1.89.0".default.override {
+        toolchainMsrv = pkgs.rust-bin.stable."1.89".default.override {
           extensions = ["rust-analyzer" "rust-src"];
         };
         naerskMsrv = naersk.lib.${system}.override {
