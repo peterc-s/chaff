@@ -12,7 +12,7 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
     pub(crate) queues: u8,
@@ -50,7 +50,7 @@ impl Machine {
         // non-existent queues
         let invalid_state_action_queues = states
             .iter()
-            .map(|state| state.action)
+            .map(|state| state.action.clone())
             .filter_map(|action| match action {
                 Action::Framework(framework_action) => match framework_action {
                     FrameworkAction::Schedule { queue, .. }
@@ -81,10 +81,105 @@ impl Machine {
     }
 
     /// Create a new [`Machine`] with the given states.
+    ///
+    /// # Errors
+    ///
+    /// Errors with a [`ValidationError`] if any validation fails. This may be because there are
+    /// invalid transitions ([`ValidationError::TransitionToInvalidState`]), because there are state
+    /// actions that would try to interact with non-existent queues
+    /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
     pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
         Self::validate(&states, queues)?;
         Ok(Self { states, queues })
     }
+}
+
+/// Create a machine with named states.
+///
+/// # Example
+///
+/// ```rust
+/// use chaff::{
+///     machine,
+///     action::IntegratorAction,
+///     event::Event,
+///     machine::Machine,
+///     state::{State, TransitionProbs}
+/// };
+///
+/// let machine_macro = machine! {
+///     num_queues: 0,
+///     
+///     state Init {
+///         action: IntegratorAction::SendDecoy,
+///         transitions: [
+///             Event::SendNormal => (End, 0.5),
+///         ]
+///     },
+///     
+///     state End {
+///         action: IntegratorAction::SendDecoy
+///     }
+/// }.unwrap();
+///
+/// let machine_manual = Machine::new(
+///     vec![
+///         State::new(
+///             Some(TransitionProbs::from_tuples([(Event::SendNormal, (1, 0.5))]).unwrap()),
+///             IntegratorAction::SendDecoy
+///         ),
+///         State::new(None, IntegratorAction::SendDecoy)
+///     ],
+///     0
+/// ).unwrap();
+///
+/// assert_eq!(machine_macro, machine_manual);
+/// ```
+#[macro_export]
+macro_rules! machine {
+    (
+        num_queues: $queues:expr,
+        $(
+            state $name:ident {
+                action: $action:expr
+                $(, transitions: [ $( $event:expr => ($target:ident, $prob:expr) ),* $(,)? ] )?
+                $(,)?
+            }
+        ),* $(,)?
+    ) => {{
+        (|| -> Result<$crate::machine::Machine, $crate::errors::ValidationError> {
+            // assign sequential indices
+            #[expect(unused_variables)]
+            let ($( $name, )*) = {
+                let mut _idx = 0usize;
+                $(
+                    let $name = _idx;
+                    _idx += 1;
+                )*
+                ($( $name, )*)
+            };
+
+            let mut states = Vec::new();
+
+            // build states
+            $(
+                let mut _probs = ::core::option::Option::<$crate::state::TransitionProbs>::None;
+
+                $(
+                    _probs = ::core::option::Option::Some(
+                        $crate::state::TransitionProbs::from_tuples([
+                            $( ($event, ($target, $prob)) ),*
+                        ])?
+                    );
+                )?
+
+                states.push($crate::state::State::new(_probs, $action));
+            )*
+
+            // build the machine
+            $crate::machine::Machine::new(states, $queues)
+        })()
+    }};
 }
 
 /// The runtime for a [`Machine`]. Tracks the current machine state, holds it's [`TimedQueue`]s, and
@@ -124,7 +219,7 @@ impl MachineRuntime {
                 queue
                     .pop_ready(now)
                     .iter()
-                    .map(|timed_action| (idx as u8, timed_action.action)),
+                    .map(|timed_action| (idx as u8, timed_action.action.clone())),
             );
         }
 
@@ -135,10 +230,11 @@ impl MachineRuntime {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::time::Duration;
+    use std::{rc::Rc, time::Duration};
 
     use crate::{
-        action::IntegratorAction, event::Event, framework::Framework, state::TransitionProbs,
+        action::IntegratorAction, distr::Constant, event::Event, framework::Framework,
+        state::TransitionProbs,
     };
 
     use super::*;
@@ -150,8 +246,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             42,
         )
@@ -188,8 +284,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             42,
         );
@@ -209,15 +305,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 1,
-                        delay: Duration::from_secs(1),
-                    }
-                    .into(),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
+                    },
                 ),
             ],
             1,
@@ -233,15 +328,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
-                        delay: Duration::from_secs(1),
-                    }
-                    .into(),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
+                    },
                 ),
             ],
             1,
@@ -267,15 +361,14 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2).into()),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
-                        delay: Duration::from_secs(1),
-                    }
-                    .into(),
+                        delay: Rc::new(Constant(Duration::from_secs(1))),
+                    },
                 ),
             ],
             1,

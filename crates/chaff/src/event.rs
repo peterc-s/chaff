@@ -24,6 +24,7 @@ pub enum Event {
 
 impl Event {
     /// Whether an event can be emitted by a [`crate::framework::Framework`] as deferred.
+    #[must_use]
     pub fn is_deferred(&self) -> bool {
         match self {
             Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,

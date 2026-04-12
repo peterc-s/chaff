@@ -44,6 +44,7 @@ pub struct TraceBuilder {
 
 impl TraceBuilder {
     /// Create a new [`TraceBuilder`] with the given initial timestamp.
+    #[must_use]
     pub fn new(initial_ts: u64) -> Self {
         Self {
             directions: vec![],
@@ -63,6 +64,7 @@ impl TraceBuilder {
     }
 
     /// Build a [`Trace`] out of this [`TraceBuilder`].
+    #[must_use]
     pub fn build(self) -> Trace {
         Trace {
             directions: self.directions.into_boxed_slice(),
@@ -74,7 +76,7 @@ impl TraceBuilder {
 
 /// Represents a trace explicitly with packet [Direction]s, packet timing deltas, and sizes
 /// (assumes non-fixed transmission unit size). Fixed-size, field lengths should match.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Trace {
     /// The direction in which a packet was send.
     pub directions: Box<[Direction]>,
@@ -87,8 +89,10 @@ pub struct Trace {
 }
 
 /// Trace binary header information.
-const TRACE_MAGIC: &[u8; 5] = b"CHAFF";
-const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
+pub const TRACE_MAGIC: &[u8; 5] = b"CHAFF";
+
+/// Current version of the Chaff trace format.
+pub const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
 
 impl Trace {
     /// Should be used before a size-sensitive operation. Errors if lengths mismatch.
@@ -122,6 +126,11 @@ impl Trace {
     /// - [`Trace::sizes`].
     ///
     /// All fields are encoded little-endian.
+    ///
+    /// # Errors
+    ///
+    /// Can error if the [`Trace`]'s internal vector lengths mismatch, or if there is some error
+    /// when opening or writing to the given path.
     pub fn serialise<P: AsRef<Path>>(&self, to: &P) -> Result<(), TraceError> {
         // Length-sensitive operation, should check field lengths are the same
         // before.
@@ -172,6 +181,12 @@ impl Trace {
 
     /// Deserialise a trace from a binary-format file, see [`Trace::serialise()`] for more
     /// information on the format.
+    ///
+    /// # Errors
+    ///
+    /// May error if there are errors when reading the file, if the file's magic bytes don't match
+    /// the expected magic bytes ("CHAFF"), if the version is incompatible, or if the resulting
+    /// [`Trace`]'s internal vector lengths mismatch.
     pub fn deserialise<P: AsRef<Path>>(path: &P) -> Result<Self, TraceError> {
         // read file
         let bytes = fs::read(path).map_err(TraceError::Io)?;
@@ -253,16 +268,19 @@ impl Trace {
 
     /// Returns a [`TraceIter`], an iterator over a trace, which gives ([`Direction`], [`u32`],
     /// [`u32`]) items as [`Trace`] is a Struct-of-Arrays.
+    #[must_use]
     pub fn iter(&self) -> TraceIter<'_> {
         self.into_iter()
     }
 
     /// Returns the length of the trace. Assumes all internal arrays are of equal length.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.directions.len()
     }
 
     /// Checks if the trace has any packets. Assumes all internal arrays are of equal length.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.directions.is_empty()
     }
@@ -524,5 +542,13 @@ mod tests {
         let expected = "+5 Send: 64\n+15 Receive: 1500\n";
 
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_try_from_queue_cant_convert() {
+        assert!(matches!(
+            Direction::try_from(Event::QueuePopped(0)).unwrap_err(),
+            CaptureError::CantConvert
+        ));
     }
 }

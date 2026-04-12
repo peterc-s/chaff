@@ -35,12 +35,14 @@ impl PartialOrd for SimulatorEvent {
     }
 }
 
-/// Thin wrapper around a [`BinaryHeap<SimulatorEvent>`] for implementing [`From<Trace>`].
+/// Wrapper around a [`BTreeMap`] with [`u64`] keys and [`VecDeque<SimulatorQueue>`] values for
+/// using [`Trace`]s with the [`Simulator`].
 #[derive(Default, Debug, Clone)]
 pub struct SimulatorQueue(BTreeMap<u64, VecDeque<SimulatorEvent>>);
 
 impl SimulatorQueue {
     /// Peek at the earliest time in the [`SimulatorQueue`], if one exists.
+    #[must_use]
     pub fn peek_time(&self) -> Option<u64> {
         self.0.keys().next().copied()
     }
@@ -103,6 +105,9 @@ pub struct Simulator<R: Rng> {
 
     /// The simulated queues, filled with a [`Trace`].
     queue: SimulatorQueue,
+
+    /// The [`Rng`] used for [`IntegratorAction`]s.
+    rng: R,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -139,15 +144,17 @@ impl BlockState {
 impl<R: Rng> Simulator<R> {
     /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
     /// [`Trace`] to run the simulation on.
-    pub fn with(framework: Framework<R>, trace: Trace) -> Self {
+    pub fn with(framework: Framework<R>, trace: Trace, rng: R) -> Self {
         Self {
             framework,
             trace,
             queue: SimulatorQueue::default(),
+            rng,
         }
     }
 
-    /// Run the simulation. This instantiates internal queues with the [`Simulator::trace`].
+    /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
+    /// [`Trace`].
     pub fn run(&mut self) -> Trace {
         self.queue = SimulatorQueue::from(self.trace.clone());
         let mut block_state = BlockState::default();
@@ -190,7 +197,8 @@ impl<R: Rng> Simulator<R> {
                     }
                     IntegratorAction::BlockOutgoing(duration) => {
                         #[expect(clippy::cast_possible_truncation)]
-                        let end_ts = sim_now + duration.as_micros() as u64;
+                        let end_ts =
+                            sim_now + duration.sample_dyn(&mut self.rng).as_micros() as u64;
                         block_state.block(end_ts);
                     }
                     IntegratorAction::ReleaseBlock => {
@@ -206,13 +214,15 @@ impl<R: Rng> Simulator<R> {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, rc::Rc};
 
     use chaff::{
         machine::Machine,
         state::{State, TransitionProbs},
     };
+    use rand::{SeedableRng as _, distr::Uniform, rngs::SmallRng};
 
     use super::*;
 
@@ -224,7 +234,7 @@ mod tests {
             sizes: Box::new([100, 200, 300]),
         };
         let framework = Framework::new(Machine::default(), rand::rng());
-        let mut sim: Simulator<_> = Simulator::with(framework, trace.clone());
+        let mut sim: Simulator<_> = Simulator::with(framework, trace.clone(), rand::rng());
 
         let out_trace = sim.run();
 
@@ -251,7 +261,7 @@ mod tests {
             let in_trace = Trace::deserialise(&path).unwrap();
 
             let framework = Framework::new(Machine::default(), rand::rng());
-            let mut sim = Simulator::with(framework, in_trace.clone());
+            let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
             let out_trace = sim.run();
 
             assert_eq!(in_trace, out_trace);
@@ -294,12 +304,12 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
                 State::new(
                     Some(trans_1_to_2),
-                    IntegratorAction::BlockOutgoing(Duration::from_secs(999)).into(),
+                    IntegratorAction::block_outgoing(Duration::from_secs(999)),
                 ),
-                State::new(None, IntegratorAction::ReleaseBlock.into()),
+                State::new(None, IntegratorAction::ReleaseBlock),
             ],
             0,
         )
@@ -317,6 +327,7 @@ mod tests {
                 timing_deltas: Box::new([0, 10, 10, 10]),
                 sizes: Box::new([100, 100, 100, 100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();
@@ -348,10 +359,10 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock),
                 State::new(
                     None,
-                    IntegratorAction::BlockOutgoing(Duration::from_micros(50)).into(),
+                    IntegratorAction::block_outgoing(Duration::from_micros(50)),
                 ),
             ],
             0,
@@ -369,6 +380,7 @@ mod tests {
                 timing_deltas: Box::new([0, 10, 50]),
                 sizes: Box::new([100, 100, 100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();
@@ -386,8 +398,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock.into()),
-                State::new(None, IntegratorAction::SendDecoy.into()),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::SendDecoy),
             ],
             0,
         )
@@ -400,6 +412,7 @@ mod tests {
                 timing_deltas: Box::new([0]),
                 sizes: Box::new([100]),
             },
+            rand::rng(),
         );
 
         let out = sim.run();
@@ -409,5 +422,59 @@ mod tests {
         assert_eq!(out.timing_deltas[1], 0);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
+    }
+
+    /// This test exists mostly because all other tests use [`chaff::distr::Constant`] and the standard
+    /// [`rand::rng()`].
+    #[test]
+    fn test_with_uniform_distribution() {
+        let uniform = Uniform::new(Duration::from_micros(110), Duration::from_micros(160))
+            .expect("valid uniform range");
+
+        let trans_0_to_1 =
+            TransitionProbs::from_tuples([(Event::ReceiveNormal, (1, 1.0))]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::BlockOutgoing(Rc::new(uniform))),
+            ],
+            0,
+        )
+        .unwrap();
+
+        let framework = Framework::new(machine, SmallRng::from_seed([0; 32]));
+
+        let input_trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Send, Direction::Send]),
+            timing_deltas: Box::new([0, 10, 100]),
+            sizes: Box::new([100, 100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, input_trace, SmallRng::from_seed([0; 32]));
+        let output_trace = sim.run();
+
+        // expected:
+        // recv @ 0, trigger random block outgoing
+        // send @ random, random block released
+        // send @ random, should have also been blocked and then released immediately
+
+        assert_eq!(output_trace.directions.len(), 3);
+        assert_eq!(output_trace.directions[0], Direction::Receive);
+
+        let elapsed: u32 = output_trace.timing_deltas.iter().sum();
+        assert!(
+            elapsed > 110,
+            "total time should be extended due to random block."
+        );
+    }
+
+    #[test]
+    fn test_simulator_empty_trace() {
+        let framework = Framework::new(Machine::default(), rand::rng());
+        let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
+
+        let out = sim.run();
+        assert!(out.directions.is_empty());
     }
 }

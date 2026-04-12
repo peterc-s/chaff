@@ -39,7 +39,7 @@ impl<T: Timed> Ord for Scheduled<T> {
 }
 
 /// An [`Action`] that implements [`Timed`] for use with the [`TimedQueue`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TimedAction {
     /// When to execute the action (see [`Timed::execute_at`]).
     pub execute_at: Instant,
@@ -67,6 +67,7 @@ pub struct TimedQueue<T: Timed> {
 
 impl<T: Timed> TimedQueue<T> {
     /// Create a new, empty [`TimedQueue`].
+    #[must_use]
     pub fn new() -> Self {
         Self {
             queue: BinaryHeap::new(),
@@ -97,6 +98,7 @@ impl<T: Timed> TimedQueue<T> {
     }
 
     /// Check if the queue is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
@@ -119,7 +121,7 @@ mod tests {
             execute_at: now,
         };
 
-        let scheduled_0 = Scheduled(timed_action);
+        let scheduled_0 = Scheduled(timed_action.clone());
         let scheduled_1 = Scheduled(timed_action);
 
         assert_eq!(scheduled_0, scheduled_1);

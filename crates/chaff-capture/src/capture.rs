@@ -14,6 +14,10 @@ use crate::{
 };
 
 /// Find an interface with the given `ifname`.
+///
+/// # Errors
+///
+/// Will throw an error if [`Device::list`] fails.
 // This isn't unit testable because it requires knowledge about the machine the test is running on.
 #[cfg(not(tarpaulin_include))]
 pub fn find_interface(ifname: &String) -> Result<Option<Device>, pcap::Error> {
@@ -31,6 +35,16 @@ fn get_device_mac(device: &Device) -> Result<MacAddress, DeviceError> {
 /// Activates the given `capture` for the given [`Duration`] and produces a [`crate::trace::Trace`].
 ///
 /// Optionally pass in a device. If no device given, look up a device with [`pcap::Device::lookup()`].
+///
+/// # Errors
+///
+/// Will error if one of the following fails:
+///
+/// - [`Device::lookup`]
+/// - [`Capture::from_device`]
+/// - [`Capture::open`]
+///
+/// Or the capture thread fails due to an [`Err`] value from [`Capture::next_packet`].
 // This isn't unit testable because libpcap requires specific capabilities (that would
 // require running as root or setting capabilities which requires root).
 #[cfg(not(tarpaulin_include))]
@@ -213,6 +227,10 @@ fn packets_to_trace(
 
 /// Stream a [`pcap::Capture`] into a [`Trace`] using the provided `local_mac` to determine
 /// direction if the [`pcap::Capture`]'s [`pcap::Linktype`] is `ETHERNET`.
+///
+/// # Errors
+///
+/// Will error if [`Capture::next_packet`] or if determining a packet's direction fails.
 pub fn capture_to_trace<T: pcap::Activated>(
     capture: &mut Capture<T>,
     local_mac: MacAddress,
