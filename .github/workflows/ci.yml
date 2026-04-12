@@ -6,8 +6,19 @@ on:
     branches: [main]
 
 jobs:
+  check-msrv:
+    name: Check MSRV matches Arti
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check MSRV matches Arti
+        run: ./scripts/check_msrv.sh
+
   build-and-check:
     name: Build and Check
+    needs: check-msrv
     strategy:
       matrix:
         include:
