@@ -7,7 +7,7 @@ use rand::Rng;
 use crate::{action::Action, errors::ValidationError, event::Event};
 
 /// Represents a single state in a [`crate::machine::Machine`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct State {
     /// The probabilities of transitioning to other states in the machine.
     pub(crate) trans_probs: Option<TransitionProbs>,

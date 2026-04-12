@@ -12,7 +12,7 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
     pub(crate) queues: u8,
@@ -99,9 +99,15 @@ impl Machine {
 /// # Example
 ///
 /// ```rust
-/// use chaff::{machine, action::IntegratorAction, event::Event};
+/// use chaff::{
+///     machine,
+///     action::IntegratorAction,
+///     event::Event,
+///     machine::Machine,
+///     state::{State, TransitionProbs}
+/// };
 ///
-/// let machine_result = machine! {
+/// let machine_macro = machine! {
 ///     num_queues: 0,
 ///     
 ///     state Init {
@@ -115,6 +121,19 @@ impl Machine {
 ///         action: IntegratorAction::SendDecoy
 ///     }
 /// }.unwrap();
+///
+/// let machine_manual = Machine::new(
+///     vec![
+///         State::new(
+///             Some(TransitionProbs::from_tuples([(Event::SendNormal, (1, 0.5))]).unwrap()),
+///             IntegratorAction::SendDecoy
+///         ),
+///         State::new(None, IntegratorAction::SendDecoy)
+///     ],
+///     0
+/// ).unwrap();
+///
+/// assert_eq!(machine_macro, machine_manual);
 /// ```
 #[macro_export]
 macro_rules! machine {
