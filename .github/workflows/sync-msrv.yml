@@ -1,0 +1,70 @@
+name: Sync MSRV with Arti
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+jobs:
+  sync-msrv:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check and Update MSRV
+        id: update
+        run: |
+          arti_msrv=$(curl -sS https://gitlab.torproject.org/tpo/core/arti/-/raw/main/flake.nix | grep "RUSTUP_TOOLCHAIN" | cut -d '"' -f 2)
+
+          if [ -z "$arti_msrv" ]; then
+            echo "Failed to fetch Arti's MSRV"
+            exit 1
+          fi
+
+          if [[ "$arti_msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            full_msrv="${arti_msrv}.0"
+          else
+            full_msrv="$arti_msrv"
+          fi
+
+          current_msrv_cargo="$(grep "rust-version = " Cargo.toml | cut -d '"' -f 2)"
+          current_msrv_flake="$(grep "toolchainMsrv = " flake.nix | cut -d '"' -f 2)"
+
+          if [[ "$current_msrv_cargo" != "$current_msrv_flake" ]]; then
+            echo "MSRV in Cargo.toml and flake.nix mismatch"
+            exit 1
+          fi
+
+          if [[ "$full_msrv" != "$current_msrv_cargo" ]]; then
+            echo "MSRV mismatch detected. Arti: $full_msrv, Chaff: $current_msrv_cargo"
+
+            sed -i 's/rust-version = ".*"/rust-version = "'"$full_msrv"'"/' Cargo.toml
+            sed -i 's/toolchainMsrv = pkgs.rust-bin.stable.".*".default.override {/toolchainMsrv = pkgs.rust-bin.stable."'"$full_msrv"'".default.override {/' flake.nix
+
+            echo "changed=true" >>$GITHUB_OUTPUT
+            echo "new_msrv=$full_msrv" >>$GITHUB_OUTPUT
+          else
+            echo "MSRV is up to date ($current_msrv_cargo)"
+            echo "changed=false" >>$GITHUB_OUTPUT
+          fi
+
+      - name: Create PR
+        if: steps.update.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore: update MSRV to ${{ steps.update.outputs.new_msrv }} to match Arti"
+          title: "Update MSRV to ${{ steps.update.outputs.new_msrv }} to match Arti"
+          body: |
+            Arti has updated their MSRV. This PR updates Chaff to match:
+
+              - Updated `rust-version` in `Cargo.toml`
+              - Updated `toolchainMsrv` in `flake.nix`
+
+            _This PR is automatically generated._
+          branch: update-msrv-${{ steps.update.outputs.new_msrv }}
+          base: main
+          delete-branch: true
+
