@@ -190,4 +190,11 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         }
     }
+
+    #[test]
+    fn test_invalid_transition_probs_from_tuples() {
+        assert!(TransitionProbs::from_tuples([(Event::SendNormal, (1, 1.5))]).is_err());
+        assert!(TransitionProbs::from_tuples([(Event::SendNormal, (1, -0.1))]).is_err());
+        assert!(TransitionProbs::from_tuples([(Event::SendNormal, (1, f32::NAN))]).is_err());
+    }
 }

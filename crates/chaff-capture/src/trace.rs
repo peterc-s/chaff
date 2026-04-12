@@ -76,7 +76,7 @@ impl TraceBuilder {
 
 /// Represents a trace explicitly with packet [Direction]s, packet timing deltas, and sizes
 /// (assumes non-fixed transmission unit size). Fixed-size, field lengths should match.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Trace {
     /// The direction in which a packet was send.
     pub directions: Box<[Direction]>,
@@ -542,5 +542,13 @@ mod tests {
         let expected = "+5 Send: 64\n+15 Receive: 1500\n";
 
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_try_from_queue_cant_convert() {
+        assert!(matches!(
+            Direction::try_from(Event::QueuePopped(0)).unwrap_err(),
+            CaptureError::CantConvert
+        ));
     }
 }

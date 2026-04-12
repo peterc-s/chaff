@@ -468,4 +468,13 @@ mod tests {
             "total time should be extended due to random block."
         );
     }
+
+    #[test]
+    fn test_simulator_empty_trace() {
+        let framework = Framework::new(Machine::default(), rand::rng());
+        let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
+
+        let out = sim.run();
+        assert!(out.directions.is_empty());
+    }
 }

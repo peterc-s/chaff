@@ -38,7 +38,7 @@ where
 
 impl Debug for dyn DynDurationDistr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Box<DynDurationDistr>")
+        write!(f, "DynDurationDistr")
     }
 }
 
@@ -64,6 +64,8 @@ impl IntoDurationDistr for Duration {
 }
 
 impl IntoDurationDistr for Rc<dyn DynDurationDistr> {
+    // tarpaulin can't seem to pick this up, but it is tested and trivial.
+    #[cfg(not(tarpaulin_include))]
     fn into_duration_distr(self) -> Rc<dyn DynDurationDistr> {
         self
     }
@@ -100,7 +102,7 @@ where
         min: Option<T>,
         max: Option<T>,
     ) -> Result<Self, ValidationError> {
-        if let (Some(min), Some(max)) = (&min, &max)
+        if let (Some(min), Some(max)) = (min, max)
             && min > max
         {
             Err(ValidationError::MinExceedsMax(format!(
@@ -148,5 +150,86 @@ where
 {
     fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> T {
         self.0
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_dyn_duration_distr_eq() {
+        let d1: Rc<dyn DynDurationDistr> = Rc::new(Constant(Duration::from_secs(1)));
+        let d2: Rc<dyn DynDurationDistr> = Rc::new(Constant(Duration::from_secs(1)));
+        let d3: Rc<dyn DynDurationDistr> = Rc::new(Constant(Duration::from_secs(2)));
+
+        // TODO: figure out if it's possible to use assert_eq and assert_ne instead.
+        assert!(d1 == Rc::clone(&d2));
+        assert!(d2 != d3);
+    }
+
+    #[test]
+    fn test_dyn_duration_debug() {
+        let d: Rc<dyn DynDurationDistr> = Rc::new(Constant(Duration::from_secs(1)));
+        assert_eq!(format!("{d:?}"), "DynDurationDistr");
+    }
+
+    #[test]
+    fn test_into_duration_distr() {
+        let mut rng = rand::rng();
+        let base = Duration::from_secs(1);
+        assert_eq!(base.into_duration_distr().sample_dyn(&mut rng), base);
+        assert_eq!(
+            Constant(base).into_duration_distr().sample_dyn(&mut rng),
+            base
+        );
+        assert_eq!(
+            Rc::new(Constant(base))
+                .into_duration_distr()
+                .sample_dyn(&mut rng),
+            base
+        );
+    }
+
+    #[test]
+    fn test_bounded_offset_min_exceed_max() {
+        let err = BoundedOffsetDistribution::new(
+            Constant(Duration::from_secs(1)),
+            None,
+            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(5)),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ValidationError::MinExceedsMax(_)));
+    }
+
+    #[test]
+    fn test_bounded_offset_distribution_sampling() {
+        let mut rng = rand::rng();
+        let base = Constant(Duration::from_secs(10));
+
+        let dist1 =
+            BoundedOffsetDistribution::new(base, Some(Duration::from_secs(2)), None, None).unwrap();
+        assert_eq!(dist1.sample(&mut rng), Duration::from_secs(12));
+
+        let dist2 = BoundedOffsetDistribution::new(base, None, Some(Duration::from_secs(15)), None)
+            .unwrap();
+        assert_eq!(dist2.sample(&mut rng), Duration::from_secs(15));
+
+        let dist3 =
+            BoundedOffsetDistribution::new(base, None, None, Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(dist3.sample(&mut rng), Duration::from_secs(5));
+
+        let dist4 = BoundedOffsetDistribution::new(
+            base,
+            None,
+            Some(Duration::from_secs(1)),
+            Some(Duration::from_secs(5)),
+        )
+        .unwrap();
+        assert_eq!(dist4.sample(&mut rng), Duration::from_secs(5));
     }
 }

@@ -553,4 +553,17 @@ mod tests {
             "should have processed deferred event then new event to reach state 2"
         );
     }
+
+    #[test]
+    fn test_framework_action_schedule_samples_delay() {
+        let machine =
+            Machine::new(vec![State::new(None, IntegratorAction::ReleaseBlock)], 1).unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let action =
+            FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, Duration::from_secs(5));
+
+        framework.perform_action(action, Instant::now());
+        assert_eq!(framework.runtime.queues[0].queue.len(), 1);
+    }
 }
