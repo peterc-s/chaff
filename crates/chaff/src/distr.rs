@@ -3,14 +3,14 @@
 
 use std::{any::Any, fmt::Debug, ops::Add, rc::Rc, time::Duration};
 
-use rand::{Rng, RngCore, distr::Distribution};
+use rand::{Rng, distr::Distribution};
 
 use crate::errors::ValidationError;
 
 /// Object-safe wrapper around [`Distribution`] for [`Duration`]s.
 pub trait DynDurationDistr: Send + Sync {
     /// See [`Distribution<Duration>::sample`].
-    fn sample_dyn(&self, rng: &mut dyn RngCore) -> Duration;
+    fn sample_dyn(&self, rng: &mut dyn Rng) -> Duration;
 
     /// Casts to [`Any`].
     fn as_any(&self) -> &dyn Any;
@@ -23,7 +23,7 @@ impl<D> DynDurationDistr for D
 where
     D: Distribution<Duration> + Clone + Send + Sync + PartialEq + Eq + 'static,
 {
-    fn sample_dyn(&self, mut rng: &mut dyn RngCore) -> Duration {
+    fn sample_dyn(&self, mut rng: &mut dyn Rng) -> Duration {
         Distribution::sample(self, &mut rng)
     }
 
