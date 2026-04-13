@@ -19,7 +19,7 @@ use chaff::{
 #[expect(clippy::unwrap_used)]
 #[must_use]
 pub fn construct_test_machine() -> Machine {
-    let trans_probs = TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())])
+    let trans_probs = TransitionProbs::new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])])
         .expect("Transition probabilities are invalid.");
 
     Machine::new(

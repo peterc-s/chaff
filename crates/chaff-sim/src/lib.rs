@@ -298,9 +298,9 @@ mod tests {
     #[test]
     fn test_block_and_manual_release() {
         let trans_0_to_1 =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
         let trans_1_to_2 =
-            TransitionProbs::new([(Event::ReceiveNormal, (2, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(2, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_block_natural_expiration() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_send_decoy() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -434,7 +434,7 @@ mod tests {
             .expect("valid uniform range");
 
         let trans_0_to_1 =
-            TransitionProbs::from_tuples([(Event::ReceiveNormal, (1, 1.0))]).unwrap();
+            TransitionProbs::from_tuples([(Event::ReceiveNormal, [(1, 1.0)])]).unwrap();
 
         let machine = Machine::new(
             vec![

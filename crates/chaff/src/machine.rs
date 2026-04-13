@@ -40,7 +40,7 @@ impl Machine {
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
             .flat_map(|probs| probs.0.values())
-            .map(|trans| trans.index)
+            .flat_map(|transitions| transitions.iter().map(|transition| transition.index))
             .filter(|&index| index > num_states)
             .collect::<Vec<_>>();
 
@@ -119,15 +119,15 @@ impl Machine {
 /// let machine_macro = machine! {
 ///     queues: [],
 ///     
-///     state Init {
+///     state init {
 ///         action: IntegratorAction::SendDecoy,
 ///         transitions: [
-///             Event::SendNormal => (End, 0.5),
+///             Event::SendNormal => [(end, 0.5)],
 ///         ],
 ///         budget: 25,
 ///     },
 ///     
-///     state End {
+///     state end {
 ///         action: IntegratorAction::SendDecoy
 ///     }
 /// }.unwrap();
@@ -135,7 +135,7 @@ impl Machine {
 /// let machine_manual = Machine::new(
 ///     vec![
 ///         State::new(
-///             Some(TransitionProbs::from_tuples([(Event::SendNormal, (1, 0.5))]).unwrap()),
+///             Some(TransitionProbs::from_tuples([(Event::SendNormal, [(1, 0.5)])]).unwrap()),
 ///             IntegratorAction::SendDecoy,
 ///             Some(25),
 ///         ),
@@ -148,12 +148,20 @@ impl Machine {
 /// ```
 #[macro_export]
 macro_rules! machine {
+    (@targets [ $( ($target:ident, $prob:expr) ),* $(,)? ]) => {
+        vec![ $( ($target, $prob) ),* ]
+    };
+
+    (@targets $target:ident) => {
+        vec![($target, 1.0)]
+    };
+
     (
         queues: $queues:expr,
         $(
             state $name:ident {
                 action: $action:expr
-                $(, transitions: [ $( $event:expr => ($target:ident, $prob:expr) ),* $(,)? ] )?
+                $(, transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] )?
                 $(, budget: $budget:expr )?
                 $(,)?
             }
@@ -161,7 +169,8 @@ macro_rules! machine {
     ) => {{
         (|| -> Result<$crate::machine::Machine, $crate::errors::ValidationError> {
             // assign sequential indices
-            #[expect(unused_variables)]
+            #[expect(clippy::allow_attributes)]
+            #[allow(unused_variables)]
             let ($( $name, )*) = {
                 let mut _idx = 0usize;
                 $(
@@ -180,7 +189,7 @@ macro_rules! machine {
                 $(
                     _probs = ::core::option::Option::Some(
                         $crate::state::TransitionProbs::from_tuples([
-                            $( ($event, ($target, $prob)) ),*
+                            $( ($event, $crate::machine!(@targets $targets)) ),*
                         ])?
                     );
                 )?
@@ -230,7 +239,7 @@ impl MachineRuntime {
             state: 0,
             queues,
             deferred_events: vec![],
-            current_budget: m.queues.first().map_or_else(|| None, |f| *f),
+            current_budget: m.states.first().and_then(|state| state.decoy_budget),
         }
     }
 
@@ -268,7 +277,7 @@ mod tests {
     #[test]
     fn test_queues_correct_len() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -306,7 +315,7 @@ mod tests {
     #[test]
     fn test_validate_invalid_state() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (3, 0.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(3, 0.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -327,7 +336,7 @@ mod tests {
     #[test]
     fn test_validate_good_queues() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -351,7 +360,7 @@ mod tests {
     #[test]
     fn test_validate_invalid_state_action_queue() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
@@ -385,7 +394,7 @@ mod tests {
     #[test]
     fn test_multiple_validation_errors() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (5, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
