@@ -77,33 +77,34 @@ impl<R: Rng> Framework<R> {
     /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
     /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
+        // TODO: this is a bit unclear and also it isn't clear how it will affect integrators.
+        // should probably document it and think a bit more about the interaction.
+        //
+        // in a separate function as the budget handling should be consistent between handling events
+        // and popping queues.
+        fn handle_integrator_action(
+            action: &IntegratorAction,
+            mut current_budget: &mut Option<usize>,
+            new_deferred_events: &mut Vec<Event>,
+            integrator_actions: &mut Vec<IntegratorAction>,
+        ) {
+            if matches!(action, IntegratorAction::SendDecoy)
+                && let Some(budget) = &mut current_budget
+            {
+                if *budget == 0 {
+                    return;
+                }
+                *budget = budget.saturating_sub(1);
+                if *budget == 0 {
+                    new_deferred_events.push(Event::StateBudgetExhausted);
+                }
+            }
+            integrator_actions.push(action.clone());
+        }
+
         let mut integrator_actions = vec![];
         let mut framework_actions = vec![];
         let mut new_deferred_events = vec![];
-
-        // in a separate closure as the budget handling should be consistent between handling events
-        // and popping queues.
-
-        // TODO: this is a bit unclear and also it isn't clear how it will affect integrators.
-        // should probably document it and think a bit more about the interaction.
-        let handle_integrator_action =
-            |action: &IntegratorAction,
-             current_budget: &mut Option<usize>,
-             new_deferred_events: &mut Vec<Event>,
-             integrator_actions: &mut Vec<IntegratorAction>| {
-                if matches!(action, IntegratorAction::SendDecoy)
-                    && let Some(budget) = current_budget
-                {
-                    if *budget == 0 {
-                        return;
-                    }
-                    *budget = budget.saturating_sub(1);
-                    if *budget == 0 {
-                        new_deferred_events.push(Event::StateBudgetExhausted);
-                    }
-                }
-                integrator_actions.push(action.clone());
-            };
 
         // handle events
         for event in self.runtime.deferred_events.iter().chain(events) {
