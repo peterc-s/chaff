@@ -121,10 +121,11 @@ impl Machine {
 ///     
 ///     state init {
 ///         action: IntegratorAction::SendDecoy,
+///         budget: 25,
 ///         transitions: [
 ///             Event::SendNormal => [(end, 0.5)],
+///             Event::ReceiveNormal => end
 ///         ],
-///         budget: 25,
 ///     },
 ///     
 ///     state end {
@@ -135,7 +136,10 @@ impl Machine {
 /// let machine_manual = Machine::new(
 ///     vec![
 ///         State::new(
-///             Some(TransitionProbs::from_tuples([(Event::SendNormal, [(1, 0.5)])]).unwrap()),
+///             Some(TransitionProbs::from_tuples([
+///                 (Event::SendNormal, [(1, 0.5)]),
+///                 (Event::ReceiveNormal, [(1, 1.0)])
+///             ]).unwrap()),
 ///             IntegratorAction::SendDecoy,
 ///             Some(25),
 ///         ),
@@ -146,24 +150,76 @@ impl Machine {
 ///
 /// assert_eq!(machine_macro, machine_manual);
 /// ```
+///
+/// # Compile-Time Errors
+///
+/// The `action:` field is strictly required for every state. Omitting it will cause a compile-time
+/// error.
+///
+/// ```rust,compile_fail
+/// use chaff::{machine, event::Event, action::IntegratorAction};
+///
+/// let machine = machine! {
+///     queues: [],
+///
+///     state missing_action {
+///         transitions: [
+///             Event::SendNormal => end,
+///         ],
+///         budget: 25,
+///     },
+///
+///     state end {
+///         action: IntegratorAction::SendDecoy
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! machine {
+    // transition targets
     (@targets [ $( ($target:ident, $prob:expr) ),* $(,)? ]) => {
         vec![ $( ($target, $prob) ),* ]
     };
-
     (@targets $target:ident) => {
         vec![($target, 1.0)]
+    };
+
+    // state field parsing
+    // parse `action:` - updates the status to found
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] action: $action:expr $(, $($rest:tt)*)? ) => {
+        $a = ::core::option::Option::Some($action);
+        $crate::machine!(@parse_state $a $t $b [found] $($($rest)*)?);
+    };
+
+    // parse `transitions:`
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] $(, $($rest:tt)*)? ) => {
+        $t = ::core::option::Option::Some(
+            $crate::state::TransitionProbs::from_tuples([
+                $( ($event, $crate::machine!(@targets $targets)) ),*
+            ])?
+        );
+        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+    };
+
+    // parse `budget:`
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] budget: $budget:expr $(, $($rest:tt)*)? ) => {
+        $b = ::core::option::Option::Some($budget);
+        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+    };
+
+    // base case, `action:` found
+    (@parse_state $a:ident $t:ident $b:ident [found]) => {};
+
+    // base case, `action:` not found
+    (@parse_state $a:ident $t:ident $b:ident [missing]) => {
+        ::core::compile_error!("action is a required field for a state");
     };
 
     (
         queues: $queues:expr,
         $(
             state $name:ident {
-                action: $action:expr
-                $(, transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] )?
-                $(, budget: $budget:expr )?
-                $(,)?
+                $($body:tt)*
             }
         ),* $(,)?
     ) => {{
@@ -184,23 +240,18 @@ macro_rules! machine {
 
             // build states
             $(
-                let mut _probs = ::core::option::Option::<$crate::state::TransitionProbs>::None;
-
-                $(
-                    _probs = ::core::option::Option::Some(
-                        $crate::state::TransitionProbs::from_tuples([
-                            $( ($event, $crate::machine!(@targets $targets)) ),*
-                        ])?
-                    );
-                )?
-
+                let mut _action = ::core::option::Option::None;
+                let mut _probs = ::core::option::Option::None;
                 let mut _budget = ::core::option::Option::None;
 
-                $(
-                    _budget = ::core::option::Option::Some($budget);
-                )?
+                // assign state properties, start with [missing] status as action not found
+                $crate::machine!(@parse_state _action _probs _budget [missing] $($body)*);
 
-                states.push($crate::state::State::new(_probs, $action, _budget));
+                states.push($crate::state::State::new(
+                    _probs,
+                    _action.expect("action is a required field for a state"),
+                    _budget,
+                ));
             )*
 
             // build the machine
