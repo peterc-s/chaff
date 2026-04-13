@@ -78,6 +78,28 @@ impl<R: Rng> Framework<R> {
         let mut framework_actions = vec![];
         let mut new_deferred_events = vec![];
 
+        // in a separate closure as the budget handling should be consistent between handling events
+        // and popping queues.
+
+        // TODO: this is a bit unclear and also it isn't clear how it will affect integrators.
+        // should probably document it and think a bit more about the interaction.
+        let handle_integrator_action =
+            |action: &IntegratorAction,
+             current_budget: &mut Option<usize>,
+             new_deferred_events: &mut Vec<Event>,
+             integrator_actions: &mut Vec<IntegratorAction>| {
+                if matches!(action, IntegratorAction::SendDecoy)
+                    && let Some(budget) = current_budget
+                    && *budget > 0
+                {
+                    *budget = budget.saturating_sub(1);
+                    if *budget == 0 {
+                        new_deferred_events.push(Event::StateBudgetExhausted);
+                    }
+                }
+                integrator_actions.push(action.clone());
+            };
+
         // handle events
         for event in self.runtime.deferred_events.iter().chain(events) {
             if let Some(new_state) = self
@@ -96,17 +118,12 @@ impl<R: Rng> Framework<R> {
                         framework_actions.push(framework_action.clone());
                     }
                     Action::Integrator(integrator_action) => {
-                        // TODO: reason a bit more about this. is there the possibility of sending
-                        // multiple [`Event::StateBudgetExhausted`] events per state?
-                        if matches!(integrator_action, IntegratorAction::SendDecoy)
-                            && let Some(budget) = &mut self.runtime.current_budget
-                        {
-                            *budget = budget.saturating_sub(1);
-                            if *budget == 0 {
-                                new_deferred_events.push(Event::StateBudgetExhausted);
-                            }
-                        }
-                        integrator_actions.push(integrator_action.clone());
+                        handle_integrator_action(
+                            integrator_action,
+                            &mut self.runtime.current_budget,
+                            &mut new_deferred_events,
+                            &mut integrator_actions,
+                        );
                     }
                 }
             }
@@ -121,16 +138,12 @@ impl<R: Rng> Framework<R> {
                     framework_actions.push(framework_action.clone());
                 }
                 Action::Integrator(integrator_action) => {
-                    // TODO: same as above, plus maybe refactor to be a bit cleaner.
-                    if matches!(integrator_action, IntegratorAction::SendDecoy)
-                        && let Some(budget) = &mut self.runtime.current_budget
-                    {
-                        *budget = budget.saturating_sub(1);
-                        if *budget == 0 {
-                            new_deferred_events.push(Event::StateBudgetExhausted);
-                        }
-                    }
-                    integrator_actions.push(integrator_action.clone());
+                    handle_integrator_action(
+                        integrator_action,
+                        &mut self.runtime.current_budget,
+                        &mut new_deferred_events,
+                        &mut integrator_actions,
+                    );
                 }
             }
         });
