@@ -298,20 +298,21 @@ mod tests {
     #[test]
     fn test_block_and_manual_release() {
         let trans_0_to_1 =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
         let trans_1_to_2 =
-            TransitionProbs::new([(Event::ReceiveNormal, (2, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(2, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock, None),
                 State::new(
                     Some(trans_1_to_2),
                     IntegratorAction::block_outgoing(Duration::from_secs(999)),
+                    None,
                 ),
-                State::new(None, IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::ReleaseBlock, None),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -355,17 +356,18 @@ mod tests {
     #[test]
     fn test_block_natural_expiration() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
                 State::new(
                     None,
                     IntegratorAction::block_outgoing(Duration::from_micros(50)),
+                    None,
                 ),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -394,14 +396,14 @@ mod tests {
     #[test]
     fn test_send_decoy() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -432,14 +434,18 @@ mod tests {
             .expect("valid uniform range");
 
         let trans_0_to_1 =
-            TransitionProbs::from_tuples([(Event::ReceiveNormal, (1, 1.0))]).unwrap();
+            TransitionProbs::from_tuples([(Event::ReceiveNormal, [(1, 1.0)])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
-                State::new(None, IntegratorAction::BlockOutgoing(Rc::new(uniform))),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock, None),
+                State::new(
+                    None,
+                    IntegratorAction::BlockOutgoing(Rc::new(uniform)),
+                    None,
+                ),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -476,5 +482,42 @@ mod tests {
 
         let out = sim.run();
         assert!(out.directions.is_empty());
+    }
+
+    #[test]
+    fn test_block_expires_after_trace_ends() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
+                State::new(
+                    None,
+                    IntegratorAction::block_outgoing(Duration::from_micros(999)),
+                    None,
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([Direction::Receive, Direction::Send]),
+                timing_deltas: Box::new([0, 10]),
+                sizes: Box::new([100, 100]),
+            },
+            rand::rng(),
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 2);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+
+        assert_eq!(out.timing_deltas[1], 999);
     }
 }

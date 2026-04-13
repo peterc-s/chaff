@@ -39,6 +39,9 @@ pub enum ValidationError {
     /// queue that doesn't exist.
     InvalidStateActionQueue(Box<[u8]>),
 
+    /// Number of queues supplied exceeds the [`u8`] range.
+    TooManyQueues(usize),
+
     /// Multiple [`ValidationError`]s exist.
     Multiple(Box<[Self]>),
 
@@ -66,6 +69,9 @@ impl fmt::Display for ValidationError {
                 f,
                 "state(s) contains action(s) which would attempt to use queue(s) that doesn't exist: {queues:?}"
             ),
+            Self::TooManyQueues(queues) => {
+                write!(f, "number of queues must be <= 255 (got {queues})")
+            }
             Self::Multiple(errors) => {
                 writeln!(f, "multiple errors:")?;
 

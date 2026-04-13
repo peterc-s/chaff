@@ -63,20 +63,30 @@ impl Timed for TimedAction {
 #[derive(Debug, Clone, Default)]
 pub struct TimedQueue<T: Timed> {
     pub(crate) queue: BinaryHeap<Scheduled<T>>,
+    pub(crate) capacity: Option<usize>,
 }
 
 impl<T: Timed> TimedQueue<T> {
     /// Create a new, empty [`TimedQueue`].
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(capacity: Option<usize>) -> Self {
         Self {
             queue: BinaryHeap::new(),
+            capacity,
         }
     }
 
     /// Push an item onto the [`TimedQueue`].
-    pub fn push(&mut self, item: T) {
-        self.queue.push(Scheduled(item));
+    #[must_use]
+    pub fn push(&mut self, item: T) -> bool {
+        if let Some(capacity) = self.capacity
+            && self.queue.len() >= capacity
+        {
+            false
+        } else {
+            self.queue.push(Scheduled(item));
+            true
+        }
     }
 
     /// Pop all items that are ready (i.e. [`Timed::ready`] is `true`)

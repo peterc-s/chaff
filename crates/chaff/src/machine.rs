@@ -15,7 +15,7 @@ use crate::{
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
-    pub(crate) queues: u8,
+    pub(crate) queues: Vec<Option<usize>>,
 }
 
 impl Machine {
@@ -27,7 +27,11 @@ impl Machine {
     ///
     /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
     /// which should be safe because of a prior bounds check.
-    fn validate(states: &[State], queues: u8) -> Result<(), ValidationError> {
+    fn validate(states: &[State], queues: usize) -> Result<(), ValidationError> {
+        let Ok(queues) = u8::try_from(queues) else {
+            return Err(ValidationError::TooManyQueues(queues));
+        };
+
         let mut errors = vec![];
         let num_states = states.len();
 
@@ -36,7 +40,7 @@ impl Machine {
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
             .flat_map(|probs| probs.0.values())
-            .map(|trans| trans.index)
+            .flat_map(|transitions| transitions.iter().map(|transition| transition.index))
             .filter(|&index| index > num_states)
             .collect::<Vec<_>>();
 
@@ -80,7 +84,8 @@ impl Machine {
         }
     }
 
-    /// Create a new [`Machine`] with the given states.
+    /// Create a new [`Machine`] with the given states and queues with given capacities ([`None`] for
+    /// unlimited capacity).
     ///
     /// # Errors
     ///
@@ -88,8 +93,13 @@ impl Machine {
     /// invalid transitions ([`ValidationError::TransitionToInvalidState`]), because there are state
     /// actions that would try to interact with non-existent queues
     /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
-    pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
-        Self::validate(&states, queues)?;
+    pub fn new(
+        states: impl Into<Vec<State>>,
+        queues: impl Into<Vec<Option<usize>>>,
+    ) -> Result<Self, ValidationError> {
+        let queues = queues.into();
+        let states = states.into();
+        Self::validate(&states, queues.len())?;
         Ok(Self { states, queues })
     }
 }
@@ -108,16 +118,18 @@ impl Machine {
 /// };
 ///
 /// let machine_macro = machine! {
-///     num_queues: 0,
+///     queues: [],
 ///     
-///     state Init {
+///     state init {
 ///         action: IntegratorAction::SendDecoy,
+///         budget: 25,
 ///         transitions: [
-///             Event::SendNormal => (End, 0.5),
-///         ]
+///             Event::SendNormal => [(end, 0.5)],
+///             Event::ReceiveNormal => end
+///         ],
 ///     },
 ///     
-///     state End {
+///     state end {
 ///         action: IntegratorAction::SendDecoy
 ///     }
 /// }.unwrap();
@@ -125,31 +137,97 @@ impl Machine {
 /// let machine_manual = Machine::new(
 ///     vec![
 ///         State::new(
-///             Some(TransitionProbs::from_tuples([(Event::SendNormal, (1, 0.5))]).unwrap()),
-///             IntegratorAction::SendDecoy
+///             Some(TransitionProbs::from_tuples([
+///                 (Event::SendNormal, [(1, 0.5)]),
+///                 (Event::ReceiveNormal, [(1, 1.0)])
+///             ]).unwrap()),
+///             IntegratorAction::SendDecoy,
+///             Some(25),
 ///         ),
-///         State::new(None, IntegratorAction::SendDecoy)
+///         State::new(None, IntegratorAction::SendDecoy, None)
 ///     ],
-///     0
+///     [],
 /// ).unwrap();
 ///
 /// assert_eq!(machine_macro, machine_manual);
 /// ```
+///
+/// # Compile-Time Errors
+///
+/// The `action:` field is strictly required for every state. Omitting it will cause a compile-time
+/// error.
+///
+/// ```rust,compile_fail
+/// use chaff::{machine, event::Event, action::IntegratorAction};
+///
+/// let machine = machine! {
+///     queues: [],
+///
+///     state missing_action {
+///         transitions: [
+///             Event::SendNormal => end,
+///         ],
+///         budget: 25,
+///     },
+///
+///     state end {
+///         action: IntegratorAction::SendDecoy
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! machine {
+    // transition targets
+    (@targets [ $( ($target:ident, $prob:expr) ),* $(,)? ]) => {
+        vec![ $( ($target, $prob) ),* ]
+    };
+    (@targets $target:ident) => {
+        vec![($target, 1.0)]
+    };
+
+    // state field parsing
+    // parse `action:` - updates the status to found
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] action: $action:expr $(, $($rest:tt)*)? ) => {
+        $a = ::core::option::Option::Some($action);
+        $crate::machine!(@parse_state $a $t $b [found] $($($rest)*)?);
+    };
+
+    // parse `transitions:`
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] $(, $($rest:tt)*)? ) => {
+        $t = ::core::option::Option::Some(
+            $crate::state::TransitionProbs::from_tuples([
+                $( ($event, $crate::machine!(@targets $targets)) ),*
+            ])?
+        );
+        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+    };
+
+    // parse `budget:`
+    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] budget: $budget:expr $(, $($rest:tt)*)? ) => {
+        $b = ::core::option::Option::Some($budget);
+        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+    };
+
+    // base case, `action:` found
+    (@parse_state $a:ident $t:ident $b:ident [found]) => {};
+
+    // base case, `action:` not found
+    (@parse_state $a:ident $t:ident $b:ident [missing]) => {
+        ::core::compile_error!("action is a required field for a state");
+    };
+
     (
-        num_queues: $queues:expr,
+        queues: $queues:expr,
         $(
             state $name:ident {
-                action: $action:expr
-                $(, transitions: [ $( $event:expr => ($target:ident, $prob:expr) ),* $(,)? ] )?
-                $(,)?
+                $($body:tt)*
             }
         ),* $(,)?
     ) => {{
         (|| -> Result<$crate::machine::Machine, $crate::errors::ValidationError> {
             // assign sequential indices
-            #[expect(unused_variables)]
+            #[expect(clippy::allow_attributes)]
+            #[allow(unused_variables)]
             let ($( $name, )*) = {
                 let mut _idx = 0usize;
                 $(
@@ -163,17 +241,18 @@ macro_rules! machine {
 
             // build states
             $(
-                let mut _probs = ::core::option::Option::<$crate::state::TransitionProbs>::None;
+                let mut _action = ::core::option::Option::None;
+                let mut _probs = ::core::option::Option::None;
+                let mut _budget = ::core::option::Option::None;
 
-                $(
-                    _probs = ::core::option::Option::Some(
-                        $crate::state::TransitionProbs::from_tuples([
-                            $( ($event, ($target, $prob)) ),*
-                        ])?
-                    );
-                )?
+                // assign state properties, start with [missing] status as action not found
+                $crate::machine!(@parse_state _action _probs _budget [missing] $($body)*);
 
-                states.push($crate::state::State::new(_probs, $action));
+                states.push($crate::state::State::new(
+                    _probs,
+                    _action.expect("action is a required field for a state"),
+                    _budget,
+                ));
             )*
 
             // build the machine
@@ -194,17 +273,25 @@ pub struct MachineRuntime {
 
     /// Events deferred to the next [`crate::framework::Framework`] tick.
     pub(crate) deferred_events: Vec<Event>,
+
+    /// Current state budget.
+    pub(crate) current_budget: Option<usize>,
 }
 
 impl MachineRuntime {
     /// Create a new [`MachineRuntime`] for a given [`Machine`].
     pub fn new<M: Borrow<Machine>>(machine: M) -> Self {
         let m = machine.borrow();
-        let queues = (0..m.queues).map(|_| TimedQueue::new()).collect();
+        let queues = m
+            .queues
+            .iter()
+            .map(|capacity| TimedQueue::new(*capacity))
+            .collect();
         Self {
             state: 0,
             queues,
             deferred_events: vec![],
+            current_budget: m.states.first().and_then(|state| state.decoy_budget),
         }
     }
 
@@ -242,31 +329,31 @@ mod tests {
     #[test]
     fn test_queues_correct_len() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            42,
+            [None; 42],
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
         assert_eq!(
             framework.runtime.queues.len(),
-            framework.machine.queues as usize
+            framework.machine.queues.len(),
         );
     }
 
     #[test]
     fn test_pop_queues_with_data() {
-        let machine = Machine::new(vec![], 1).unwrap();
+        let machine = Machine::new(vec![], [None]).unwrap();
         let mut framework = Framework::new(machine, rand::rng());
         let now = Instant::now();
 
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             action: IntegratorAction::SendDecoy.into(),
             execute_at: now,
         });
@@ -280,14 +367,14 @@ mod tests {
     #[test]
     fn test_validate_invalid_state() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (3, 0.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(3, 0.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            42,
+            [None; 42],
         );
 
         match machine {
@@ -301,11 +388,11 @@ mod tests {
     #[test]
     fn test_validate_good_queues() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -313,9 +400,10 @@ mod tests {
                         queue: 1,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
-            1,
+            [None],
         );
 
         assert!(machine.is_ok());
@@ -324,11 +412,11 @@ mod tests {
     #[test]
     fn test_validate_invalid_state_action_queue() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -336,9 +424,10 @@ mod tests {
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
-            1,
+            [None],
         );
 
         let invalid_queues = vec![2, 3];
@@ -357,11 +446,11 @@ mod tests {
     #[test]
     fn test_multiple_validation_errors() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (5, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -369,9 +458,10 @@ mod tests {
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
-            1,
+            [None],
         );
 
         match machine {
@@ -381,5 +471,15 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_too_many_queues() {
+        const U8_MAX_PLUS_ONE: usize = u8::MAX as usize + 1;
+        let err = Machine::new([], [None; U8_MAX_PLUS_ONE]);
+        assert!(matches!(
+            err,
+            Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
+        ));
     }
 }
