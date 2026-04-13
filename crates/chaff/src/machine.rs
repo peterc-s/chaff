@@ -94,10 +94,11 @@ impl Machine {
     /// actions that would try to interact with non-existent queues
     /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
     pub fn new(
-        states: Vec<State>,
+        states: impl Into<Vec<State>>,
         queues: impl Into<Vec<Option<usize>>>,
     ) -> Result<Self, ValidationError> {
         let queues = queues.into();
+        let states = states.into();
         Self::validate(&states, queues.len())?;
         Ok(Self { states, queues })
     }
@@ -470,5 +471,15 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_too_many_queues() {
+        const U8_MAX_PLUS_ONE: usize = u8::MAX as usize + 1;
+        let err = Machine::new([], [None; U8_MAX_PLUS_ONE]);
+        assert!(matches!(
+            err,
+            Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
+        ));
     }
 }

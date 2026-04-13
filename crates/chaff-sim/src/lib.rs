@@ -483,4 +483,41 @@ mod tests {
         let out = sim.run();
         assert!(out.directions.is_empty());
     }
+
+    #[test]
+    fn test_block_expires_after_trace_ends() {
+        let trans =
+            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+
+        let machine = Machine::new(
+            vec![
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
+                State::new(
+                    None,
+                    IntegratorAction::block_outgoing(Duration::from_micros(999)),
+                    None,
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            Trace {
+                directions: Box::new([Direction::Receive, Direction::Send]),
+                timing_deltas: Box::new([0, 10]),
+                sizes: Box::new([100, 100]),
+            },
+            rand::rng(),
+        );
+
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 2);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+
+        assert_eq!(out.timing_deltas[1], 999);
+    }
 }

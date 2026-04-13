@@ -227,4 +227,20 @@ mod tests {
         assert!(TransitionProbs::from_tuples([(Event::SendNormal, [(1, f32::NAN)])]).is_err());
         assert!(TransitionProbs::from_tuples([(Event::SendNormal, [(1, 0.6), (2, 0.5)])]).is_err());
     }
+
+    #[test]
+    fn test_get_transition() {
+        let trans_probs = TransitionProbs::new([(
+            Event::SendNormal,
+            [(1, 0.5).try_into().unwrap(), (2, 0.5).try_into().unwrap()],
+        )])
+        .unwrap();
+
+        let send_transitions = trans_probs.get(Event::SendNormal);
+        assert!(send_transitions.is_some());
+        assert_eq!(send_transitions.unwrap().len(), 2);
+
+        let receive_transitions = trans_probs.get(Event::ReceiveNormal);
+        assert!(receive_transitions.is_none());
+    }
 }
