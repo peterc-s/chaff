@@ -15,7 +15,7 @@ use crate::{
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
-    pub(crate) queues: u8,
+    pub(crate) queues: Vec<Option<usize>>,
 }
 
 impl Machine {
@@ -27,7 +27,11 @@ impl Machine {
     ///
     /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
     /// which should be safe because of a prior bounds check.
-    fn validate(states: &[State], queues: u8) -> Result<(), ValidationError> {
+    fn validate(states: &[State], queues: usize) -> Result<(), ValidationError> {
+        let Ok(queues) = u8::try_from(queues) else {
+            return Err(ValidationError::TooManyQueues(queues));
+        };
+
         let mut errors = vec![];
         let num_states = states.len();
 
@@ -80,7 +84,8 @@ impl Machine {
         }
     }
 
-    /// Create a new [`Machine`] with the given states.
+    /// Create a new [`Machine`] with the given states and queues with given capacities ([`None`] for
+    /// unlimited capacity).
     ///
     /// # Errors
     ///
@@ -88,8 +93,12 @@ impl Machine {
     /// invalid transitions ([`ValidationError::TransitionToInvalidState`]), because there are state
     /// actions that would try to interact with non-existent queues
     /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
-    pub fn new(states: Vec<State>, queues: u8) -> Result<Self, ValidationError> {
-        Self::validate(&states, queues)?;
+    pub fn new(
+        states: Vec<State>,
+        queues: impl Into<Vec<Option<usize>>>,
+    ) -> Result<Self, ValidationError> {
+        let queues = queues.into();
+        Self::validate(&states, queues.len())?;
         Ok(Self { states, queues })
     }
 }
@@ -108,7 +117,7 @@ impl Machine {
 /// };
 ///
 /// let machine_macro = machine! {
-///     num_queues: 0,
+///     queues: [],
 ///     
 ///     state Init {
 ///         action: IntegratorAction::SendDecoy,
@@ -130,7 +139,7 @@ impl Machine {
 ///         ),
 ///         State::new(None, IntegratorAction::SendDecoy)
 ///     ],
-///     0
+///     [],
 /// ).unwrap();
 ///
 /// assert_eq!(machine_macro, machine_manual);
@@ -138,7 +147,7 @@ impl Machine {
 #[macro_export]
 macro_rules! machine {
     (
-        num_queues: $queues:expr,
+        queues: $queues:expr,
         $(
             state $name:ident {
                 action: $action:expr
@@ -200,7 +209,11 @@ impl MachineRuntime {
     /// Create a new [`MachineRuntime`] for a given [`Machine`].
     pub fn new<M: Borrow<Machine>>(machine: M) -> Self {
         let m = machine.borrow();
-        let queues = (0..m.queues).map(|_| TimedQueue::new()).collect();
+        let queues = m
+            .queues
+            .iter()
+            .map(|capacity| TimedQueue::new(*capacity))
+            .collect();
         Self {
             state: 0,
             queues,
@@ -249,24 +262,24 @@ mod tests {
                 State::new(Some(trans_probs), IntegratorAction::SendDecoy),
                 State::new(None, IntegratorAction::SendDecoy),
             ],
-            42,
+            [None; 42],
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
 
         assert_eq!(
             framework.runtime.queues.len(),
-            framework.machine.queues as usize
+            framework.machine.queues.len(),
         );
     }
 
     #[test]
     fn test_pop_queues_with_data() {
-        let machine = Machine::new(vec![], 1).unwrap();
+        let machine = Machine::new(vec![], [None]).unwrap();
         let mut framework = Framework::new(machine, rand::rng());
         let now = Instant::now();
 
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             action: IntegratorAction::SendDecoy.into(),
             execute_at: now,
         });
@@ -287,7 +300,7 @@ mod tests {
                 State::new(Some(trans_probs), IntegratorAction::SendDecoy),
                 State::new(None, IntegratorAction::SendDecoy),
             ],
-            42,
+            [None; 42],
         );
 
         match machine {
@@ -315,7 +328,7 @@ mod tests {
                     },
                 ),
             ],
-            1,
+            [None],
         );
 
         assert!(machine.is_ok());
@@ -338,7 +351,7 @@ mod tests {
                     },
                 ),
             ],
-            1,
+            [None],
         );
 
         let invalid_queues = vec![2, 3];
@@ -371,7 +384,7 @@ mod tests {
                     },
                 ),
             ],
-            1,
+            [None],
         );
 
         match machine {

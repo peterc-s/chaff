@@ -20,6 +20,9 @@ pub enum Event {
 
     /// Given queue was popped. Emitted by framework.
     QueuePopped(u8),
+
+    /// Given queue has reached capacity. Emitted by framework.
+    QueueFull(u8),
 }
 
 impl Event {
@@ -28,7 +31,7 @@ impl Event {
     pub fn is_deferred(&self) -> bool {
         match self {
             Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,
-            Self::QueuePopped(_) => true,
+            Self::QueuePopped(_) | Self::QueueFull(_) => true,
         }
     }
 }

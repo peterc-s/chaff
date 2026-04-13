@@ -311,7 +311,7 @@ mod tests {
                 ),
                 State::new(None, IntegratorAction::ReleaseBlock),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -365,7 +365,7 @@ mod tests {
                     IntegratorAction::block_outgoing(Duration::from_micros(50)),
                 ),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -401,7 +401,7 @@ mod tests {
                 State::new(Some(trans), IntegratorAction::ReleaseBlock),
                 State::new(None, IntegratorAction::SendDecoy),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -439,7 +439,7 @@ mod tests {
                 State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
                 State::new(None, IntegratorAction::BlockOutgoing(Rc::new(uniform))),
             ],
-            0,
+            [],
         )
         .unwrap();
 
