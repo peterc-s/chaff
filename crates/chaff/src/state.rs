@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rand::Rng;
+use rand::RngExt;
 
 use crate::{action::Action, errors::ValidationError, event::Event};
 
@@ -140,7 +140,7 @@ impl TransitionProbs {
 
     /// "Trigger" a transition probabilistically based on the given event. Returns [`None`] if no
     /// transition occurs.
-    pub fn trigger(&self, rng: &mut impl Rng, event: Event) -> Option<usize> {
+    pub fn trigger(&self, rng: &mut impl RngExt, event: Event) -> Option<usize> {
         self.get(event).and_then(|trans| {
             if trans.prob >= rng.random() {
                 Some(trans.index)
