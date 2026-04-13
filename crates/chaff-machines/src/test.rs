@@ -27,8 +27,9 @@ pub fn construct_test_machine() -> Machine {
             State::new(
                 Some(trans_probs),
                 Action::Integrator(IntegratorAction::SendDecoy),
+                None,
             ),
-            State::new(None, Action::Integrator(IntegratorAction::SendDecoy)),
+            State::new(None, Action::Integrator(IntegratorAction::SendDecoy), None),
         ],
         [None],
     )

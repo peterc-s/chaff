@@ -14,14 +14,22 @@ pub struct State {
 
     /// The action to take on transitioning to this state.
     pub(crate) action: Action,
+
+    /// The number of decoys this state can send
+    pub(crate) decoy_budget: Option<usize>,
 }
 
 impl State {
     /// Create a new state with the given [`TransitionProbs`] and [`Action`] to take on transition.
-    pub fn new(trans_probs: impl Into<Option<TransitionProbs>>, action: impl Into<Action>) -> Self {
+    pub fn new(
+        trans_probs: impl Into<Option<TransitionProbs>>,
+        action: impl Into<Action>,
+        decoy_budget: Option<usize>,
+    ) -> Self {
         Self {
             trans_probs: trans_probs.into(),
             action: action.into(),
+            decoy_budget,
         }
     }
 }

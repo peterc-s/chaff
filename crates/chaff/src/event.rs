@@ -23,6 +23,9 @@ pub enum Event {
 
     /// Given queue has reached capacity. Emitted by framework.
     QueueFull(u8),
+
+    /// A the current state budget has been exhausted.
+    StateBudgetExhausted,
 }
 
 impl Event {
@@ -31,7 +34,7 @@ impl Event {
     pub fn is_deferred(&self) -> bool {
         match self {
             Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,
-            Self::QueuePopped(_) | Self::QueueFull(_) => true,
+            Self::QueuePopped(_) | Self::QueueFull(_) | Self::StateBudgetExhausted => true,
         }
     }
 }

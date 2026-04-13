@@ -304,12 +304,13 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock, None),
                 State::new(
                     Some(trans_1_to_2),
                     IntegratorAction::block_outgoing(Duration::from_secs(999)),
+                    None,
                 ),
-                State::new(None, IntegratorAction::ReleaseBlock),
+                State::new(None, IntegratorAction::ReleaseBlock, None),
             ],
             [],
         )
@@ -359,10 +360,11 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
                 State::new(
                     None,
                     IntegratorAction::block_outgoing(Duration::from_micros(50)),
+                    None,
                 ),
             ],
             [],
@@ -398,8 +400,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans), IntegratorAction::ReleaseBlock),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans), IntegratorAction::ReleaseBlock, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [],
         )
@@ -436,8 +438,12 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock),
-                State::new(None, IntegratorAction::BlockOutgoing(Rc::new(uniform))),
+                State::new(Some(trans_0_to_1), IntegratorAction::ReleaseBlock, None),
+                State::new(
+                    None,
+                    IntegratorAction::BlockOutgoing(Rc::new(uniform)),
+                    None,
+                ),
             ],
             [],
         )

@@ -89,11 +89,23 @@ impl<R: Rng> Framework<R> {
             {
                 self.runtime.state = new_state;
 
+                self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+
                 match &self.machine.states[new_state].action {
                     Action::Framework(framework_action) => {
                         framework_actions.push(framework_action.clone());
                     }
                     Action::Integrator(integrator_action) => {
+                        // TODO: reason a bit more about this. is there the possibility of sending
+                        // multiple [`Event::StateBudgetExhausted`] events per state?
+                        if matches!(integrator_action, IntegratorAction::SendDecoy)
+                            && let Some(budget) = &mut self.runtime.current_budget
+                        {
+                            *budget = budget.saturating_sub(1);
+                            if *budget == 0 {
+                                new_deferred_events.push(Event::StateBudgetExhausted);
+                            }
+                        }
                         integrator_actions.push(integrator_action.clone());
                     }
                 }
@@ -109,6 +121,15 @@ impl<R: Rng> Framework<R> {
                     framework_actions.push(framework_action.clone());
                 }
                 Action::Integrator(integrator_action) => {
+                    // TODO: same as above, plus maybe refactor to be a bit cleaner.
+                    if matches!(integrator_action, IntegratorAction::SendDecoy)
+                        && let Some(budget) = &mut self.runtime.current_budget
+                    {
+                        *budget = budget.saturating_sub(1);
+                        if *budget == 0 {
+                            new_deferred_events.push(Event::StateBudgetExhausted);
+                        }
+                    }
                     integrator_actions.push(integrator_action.clone());
                 }
             }
@@ -152,8 +173,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [],
         )
@@ -170,8 +191,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [],
         )
@@ -193,8 +214,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelAll),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelAll, None),
             ],
             [],
         )
@@ -212,8 +233,11 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_invalid_state() {
-        let machine =
-            Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], []).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [],
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         // force bad behaviour
@@ -224,8 +248,11 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_state_with_no_trans_probs() {
-        let machine =
-            Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], []).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [],
+        )
+        .unwrap();
 
         let framework = Framework::new(machine, rand::rng());
 
@@ -240,8 +267,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [],
         )
@@ -262,8 +289,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelAll),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelAll, None),
             ],
             [None, None],
         )
@@ -291,8 +318,8 @@ mod tests {
             TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelQueue(0)),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelQueue(0), None),
             ],
             [None, None],
         )
@@ -358,7 +385,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
                 State::new(
                     None,
                     FrameworkAction::schedule(
@@ -366,6 +393,7 @@ mod tests {
                         0,
                         Duration::from_secs(999),
                     ),
+                    None,
                 ),
             ],
             [None],
@@ -389,7 +417,7 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_all_via_queue() {
         let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy)],
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
             [None; 3],
         )
         .unwrap();
@@ -420,7 +448,7 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_queue_via_queue() {
         let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy)],
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
             [None, None],
         )
         .unwrap();
@@ -455,7 +483,7 @@ mod tests {
     #[test]
     fn test_perform_action_schedule_via_queue() {
         let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::SendDecoy)],
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
             [None, None],
         )
         .unwrap();
@@ -575,7 +603,7 @@ mod tests {
     #[test]
     fn test_framework_action_schedule_samples_delay() {
         let machine = Machine::new(
-            vec![State::new(None, IntegratorAction::ReleaseBlock)],
+            vec![State::new(None, IntegratorAction::ReleaseBlock, None)],
             [None],
         )
         .unwrap();

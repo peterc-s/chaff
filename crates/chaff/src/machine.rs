@@ -123,7 +123,8 @@ impl Machine {
 ///         action: IntegratorAction::SendDecoy,
 ///         transitions: [
 ///             Event::SendNormal => (End, 0.5),
-///         ]
+///         ],
+///         budget: 25,
 ///     },
 ///     
 ///     state End {
@@ -135,9 +136,10 @@ impl Machine {
 ///     vec![
 ///         State::new(
 ///             Some(TransitionProbs::from_tuples([(Event::SendNormal, (1, 0.5))]).unwrap()),
-///             IntegratorAction::SendDecoy
+///             IntegratorAction::SendDecoy,
+///             Some(25),
 ///         ),
-///         State::new(None, IntegratorAction::SendDecoy)
+///         State::new(None, IntegratorAction::SendDecoy, None)
 ///     ],
 ///     [],
 /// ).unwrap();
@@ -152,6 +154,7 @@ macro_rules! machine {
             state $name:ident {
                 action: $action:expr
                 $(, transitions: [ $( $event:expr => ($target:ident, $prob:expr) ),* $(,)? ] )?
+                $(, budget: $budget:expr )?
                 $(,)?
             }
         ),* $(,)?
@@ -182,7 +185,13 @@ macro_rules! machine {
                     );
                 )?
 
-                states.push($crate::state::State::new(_probs, $action));
+                let mut _budget = ::core::option::Option::None;
+
+                $(
+                    _budget = ::core::option::Option::Some($budget);
+                )?
+
+                states.push($crate::state::State::new(_probs, $action, _budget));
             )*
 
             // build the machine
@@ -203,6 +212,9 @@ pub struct MachineRuntime {
 
     /// Events deferred to the next [`crate::framework::Framework`] tick.
     pub(crate) deferred_events: Vec<Event>,
+
+    /// Current state budget.
+    pub(crate) current_budget: Option<usize>,
 }
 
 impl MachineRuntime {
@@ -218,6 +230,7 @@ impl MachineRuntime {
             state: 0,
             queues,
             deferred_events: vec![],
+            current_budget: m.queues.first().map_or_else(|| None, |f| *f),
         }
     }
 
@@ -259,8 +272,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [None; 42],
         )
@@ -297,8 +310,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
             [None; 42],
         );
@@ -318,7 +331,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -326,6 +339,7 @@ mod tests {
                         queue: 1,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
             [None],
@@ -341,7 +355,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -349,6 +363,7 @@ mod tests {
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
             [None],
@@ -374,7 +389,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2)),
+                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
                 State::new(
                     None,
                     FrameworkAction::Schedule {
@@ -382,6 +397,7 @@ mod tests {
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
                     },
+                    None,
                 ),
             ],
             [None],
