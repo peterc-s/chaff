@@ -50,10 +50,14 @@ impl<R: Rng> Framework<R> {
                 action: int_action,
                 queue,
                 delay,
-            } => self.runtime.queues[queue as usize].push(TimedAction {
-                execute_at: now + delay.sample_dyn(&mut self.rng),
-                action: int_action.into(),
-            }),
+            } => {
+                if !self.runtime.queues[queue as usize].push(TimedAction {
+                    execute_at: now + delay.sample_dyn(&mut self.rng),
+                    action: int_action.into(),
+                }) {
+                    self.runtime.deferred_events.push(Event::QueueFull(queue));
+                }
+            }
             FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),
             FrameworkAction::CancelAll => {
                 self.runtime.queues.iter_mut().for_each(TimedQueue::cancel);
@@ -69,7 +73,35 @@ impl<R: Rng> Framework<R> {
     ///
     /// Returns only [`IntegratorAction`]s, any [`crate::action::FrameworkAction`]s resulting from
     /// processing events or popping queues will be taken by the [`Framework`] before returning.
+    ///
+    /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
+    /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
+        // TODO: this is a bit unclear and also it isn't clear how it will affect integrators.
+        // should probably document it and think a bit more about the interaction.
+        //
+        // in a separate function as the budget handling should be consistent between handling events
+        // and popping queues.
+        fn handle_integrator_action(
+            action: &IntegratorAction,
+            mut current_budget: &mut Option<usize>,
+            new_deferred_events: &mut Vec<Event>,
+            integrator_actions: &mut Vec<IntegratorAction>,
+        ) {
+            if matches!(action, IntegratorAction::SendDecoy)
+                && let Some(budget) = &mut current_budget
+            {
+                if *budget == 0 {
+                    return;
+                }
+                *budget = budget.saturating_sub(1);
+                if *budget == 0 {
+                    new_deferred_events.push(Event::StateBudgetExhausted);
+                }
+            }
+            integrator_actions.push(action.clone());
+        }
+
         let mut integrator_actions = vec![];
         let mut framework_actions = vec![];
         let mut new_deferred_events = vec![];
@@ -83,14 +115,27 @@ impl<R: Rng> Framework<R> {
                 .and_then(|state| state.trans_probs.as_ref())
                 .and_then(|trans_probs| trans_probs.trigger(&mut self.rng, *event))
             {
+                let is_new_state = self.runtime.state != new_state;
                 self.runtime.state = new_state;
+
+                if is_new_state {
+                    self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+                    if self.runtime.current_budget == Some(0) {
+                        new_deferred_events.push(Event::StateBudgetExhausted);
+                    }
+                }
 
                 match &self.machine.states[new_state].action {
                     Action::Framework(framework_action) => {
                         framework_actions.push(framework_action.clone());
                     }
                     Action::Integrator(integrator_action) => {
-                        integrator_actions.push(integrator_action.clone());
+                        handle_integrator_action(
+                            integrator_action,
+                            &mut self.runtime.current_budget,
+                            &mut new_deferred_events,
+                            &mut integrator_actions,
+                        );
                     }
                 }
             }
@@ -105,7 +150,12 @@ impl<R: Rng> Framework<R> {
                     framework_actions.push(framework_action.clone());
                 }
                 Action::Integrator(integrator_action) => {
-                    integrator_actions.push(integrator_action.clone());
+                    handle_integrator_action(
+                        integrator_action,
+                        &mut self.runtime.current_budget,
+                        &mut new_deferred_events,
+                        &mut integrator_actions,
+                    );
                 }
             }
         });
@@ -145,13 +195,13 @@ mod tests {
     #[test]
     fn test_get_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 0.5).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            0,
+            [],
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
@@ -163,13 +213,13 @@ mod tests {
     #[test]
     fn test_trigger_and_get_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            0,
+            [],
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -186,13 +236,13 @@ mod tests {
     #[test]
     fn test_trigger_with_0_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 0.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelAll),
+                State::new(Some(trans_probs.clone()), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelAll, None),
             ],
-            0,
+            [],
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -208,7 +258,11 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_invalid_state() {
-        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 0).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [],
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         // force bad behaviour
@@ -219,7 +273,11 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_state_with_no_trans_probs() {
-        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 0).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [],
+        )
+        .unwrap();
 
         let framework = Framework::new(machine, rand::rng());
 
@@ -230,14 +288,14 @@ mod tests {
     #[test]
     fn test_trigger_events_no_matching_event() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, IntegratorAction::SendDecoy, None),
             ],
-            0,
+            [],
         )
         .unwrap();
 
@@ -252,21 +310,21 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_all() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelAll),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelAll, None),
             ],
-            2,
+            [None, None],
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         let far_future = Instant::now() + std::time::Duration::from_secs(9999);
         for queue in &mut framework.runtime.queues {
-            queue.push(TimedAction {
+            let _ = queue.push(TimedAction {
                 execute_at: far_future,
                 action: IntegratorAction::SendDecoy.into(),
             });
@@ -282,20 +340,20 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_queue() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
-                State::new(None, FrameworkAction::CancelQueue(0)),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
+                State::new(None, FrameworkAction::CancelQueue(0), None),
             ],
-            2,
+            [None, None],
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         let far_future = Instant::now() + std::time::Duration::from_secs(999);
         for queue in &mut framework.runtime.queues {
-            queue.push(TimedAction {
+            let _ = queue.push(TimedAction {
                 execute_at: far_future,
                 action: IntegratorAction::SendDecoy.into(),
             });
@@ -317,10 +375,10 @@ mod tests {
     #[test]
     fn test_perform_action_schedule() {
         let machine = machine! {
-            num_queues: 1,
+            queues: [None],
             state init {
                 action: IntegratorAction::ReleaseBlock,
-                transitions: [Event::SendNormal => (schedule_decoy, 1.0)],
+                transitions: [Event::SendNormal => schedule_decoy],
             },
             state schedule_decoy {
                 action: FrameworkAction::schedule(
@@ -348,11 +406,11 @@ mod tests {
     #[test]
     fn test_perform_action_schedule_far_doesnt_pop() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, (1, 1.0).try_into().unwrap())]).unwrap();
+            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy),
+                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
                 State::new(
                     None,
                     FrameworkAction::schedule(
@@ -360,9 +418,10 @@ mod tests {
                         0,
                         Duration::from_secs(999),
                     ),
+                    None,
                 ),
             ],
-            1,
+            [None],
         )
         .unwrap();
 
@@ -382,19 +441,23 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_all_via_queue() {
-        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 3).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [None; 3],
+        )
+        .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
         let now = Instant::now();
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
             action: FrameworkAction::CancelAll.into(),
         });
 
         let far_future = now + Duration::from_secs(999);
         for queue in &mut framework.runtime.queues[1..] {
-            queue.push(TimedAction {
+            let _ = queue.push(TimedAction {
                 execute_at: far_future,
                 action: IntegratorAction::SendDecoy.into(),
             });
@@ -409,18 +472,22 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_queue_via_queue() {
-        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 2).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [None, None],
+        )
+        .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
         let now = Instant::now();
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
             action: FrameworkAction::CancelQueue(0).into(),
         });
 
         let far_future = now + Duration::from_secs(9999);
-        framework.runtime.queues[1].push(TimedAction {
+        let _ = framework.runtime.queues[1].push(TimedAction {
             execute_at: far_future,
             action: IntegratorAction::SendDecoy.into(),
         });
@@ -440,13 +507,17 @@ mod tests {
 
     #[test]
     fn test_perform_action_schedule_via_queue() {
-        let machine = Machine::new(vec![State::new(None, IntegratorAction::SendDecoy)], 2).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::SendDecoy, None)],
+            [None, None],
+        )
+        .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
         let now = Instant::now();
 
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
             action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, Duration::ZERO)
                 .into(),
@@ -469,10 +540,10 @@ mod tests {
     #[test]
     fn test_deferred_queue_popped_event_ordering() {
         let machine = machine! {
-            num_queues: 1,
+            queues: [None],
             state wait_pop {
                 action: IntegratorAction::SendDecoy,
-                transitions: [Event::QueuePopped(0) => (release, 1.0)],
+                transitions: [Event::QueuePopped(0) => release],
             },
             state release {
                 action: IntegratorAction::ReleaseBlock
@@ -483,7 +554,7 @@ mod tests {
         let mut framework = Framework::new(machine, rand::rng());
 
         let now = Instant::now();
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
             action: IntegratorAction::SendDecoy.into(),
         });
@@ -519,14 +590,14 @@ mod tests {
     #[test]
     fn test_deferred_events_happen_before_new_events() {
         let machine = machine! {
-            num_queues: 1,
+            queues: [None],
             state init {
                 action: IntegratorAction::SendDecoy,
-                transitions: [Event::QueuePopped(0) => (jump, 1.0)],
+                transitions: [Event::QueuePopped(0) => jump],
             },
             state jump {
                 action: IntegratorAction::SendDecoy,
-                transitions: [Event::SendNormal => (end, 1.0)],
+                transitions: [Event::SendNormal => end],
             },
             state end {
                 action: IntegratorAction::ReleaseBlock,
@@ -537,7 +608,7 @@ mod tests {
         let mut framework = Framework::new(machine, rand::rng());
 
         let now = Instant::now();
-        framework.runtime.queues[0].push(TimedAction {
+        let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
             action: IntegratorAction::SendDecoy.into(),
         });
@@ -556,8 +627,11 @@ mod tests {
 
     #[test]
     fn test_framework_action_schedule_samples_delay() {
-        let machine =
-            Machine::new(vec![State::new(None, IntegratorAction::ReleaseBlock)], 1).unwrap();
+        let machine = Machine::new(
+            vec![State::new(None, IntegratorAction::ReleaseBlock, None)],
+            [None],
+        )
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
         let action =
@@ -565,5 +639,156 @@ mod tests {
 
         framework.perform_action(action, Instant::now());
         assert_eq!(framework.runtime.queues[0].queue.len(), 1);
+    }
+
+    #[test]
+    fn test_queue_capacity_limit() {
+        let machine = machine! {
+            queues: [Some(1)],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    Duration::from_secs(999)
+                ),
+                transitions: [
+                    Event::ReceiveNormal => init,
+                    Event::SendNormal => overflow,
+                ],
+            },
+            state overflow {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    Duration::from_secs(999)
+                ),
+                transitions: [Event::QueueFull(0) => end],
+            },
+            state end {
+                action: IntegratorAction::ReleaseBlock,
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        // trigger `init`'s action
+        framework.process(&[Event::ReceiveNormal], now);
+        assert_eq!(framework.runtime.queues[0].queue.len(), 1);
+
+        // transition to `overflow`
+        framework.process(&[Event::SendNormal], now);
+        assert_eq!(framework.runtime.queues[0].queue.len(), 1);
+
+        // queuefull should trigger and we should be in `end`
+        framework.process(&[], now);
+        assert_eq!(framework.get_state(), 2);
+    }
+
+    #[test]
+    fn test_state_budget_exhausted() {
+        let machine = machine! {
+            queues: [],
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::SendNormal => decoy_burst],
+            },
+            state decoy_burst {
+                action: IntegratorAction::SendDecoy,
+                transitions: [Event::StateBudgetExhausted => end],
+                budget: 1,
+            },
+            state end {
+                action: IntegratorAction::ReleaseBlock
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        // transition to `decoy_burst`
+        let actions = framework.process(&[Event::SendNormal], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 1);
+
+        // deferred state budget exhausted event should cause transition to `end`
+        framework.process(&[], now);
+        assert_eq!(framework.get_state(), 2);
+    }
+
+    #[test]
+    fn test_state_budget_exhausted_via_queue() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::StateBudgetExhausted => end],
+                budget: 1,
+            },
+            state end {
+                action: IntegratorAction::ReleaseBlock
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        let actions = framework.process(&[], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 0);
+
+        framework.process(&[], now);
+        assert_eq!(framework.get_state(), 1);
+    }
+
+    #[test]
+    fn test_state_budget_zero_and_self_transitions() {
+        let machine = machine! {
+            queues: [],
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::ReceiveNormal => decoy_burst],
+            },
+            state decoy_burst {
+                action: IntegratorAction::SendDecoy,
+                transitions: [
+                    Event::SendNormal => decoy_burst,
+                    Event::StateBudgetExhausted => end
+                ],
+                budget: 2,
+            },
+            state end {
+                action: IntegratorAction::SendDecoy,
+                budget: 0,
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        // transition to `decoy_burst`
+        let actions = framework.process(&[Event::ReceiveNormal], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 1);
+
+        // self-transition, should exhaust budget
+        let actions = framework.process(&[Event::SendNormal], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 1);
+
+        // deferred exhaustion should transition to end, the send decoy should
+        // be blocked because `end` has a budget of 0.
+        let actions = framework.process(&[], now);
+        assert_eq!(framework.get_state(), 2);
+        assert!(actions.is_empty());
     }
 }
