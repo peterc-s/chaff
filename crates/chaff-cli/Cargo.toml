@@ -23,6 +23,6 @@ chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }
 
 bpaf = { version = "0.9.24", features = ["derive"] }
-rand = "0.9.2"
+rand = "0.9.3"
 mac_address = "1.1.8"
 pcap = "2.4.0"
