@@ -24,7 +24,7 @@ pub enum Event {
     /// Given queue has reached capacity. Emitted by framework.
     QueueFull(u8),
 
-    /// A the current state budget has been exhausted.
+    /// The current state budget has been exhausted.
     StateBudgetExhausted,
 }
 

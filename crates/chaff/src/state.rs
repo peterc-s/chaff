@@ -15,12 +15,14 @@ pub struct State {
     /// The action to take on transitioning to this state.
     pub(crate) action: Action,
 
-    /// The number of decoys this state can send
+    /// The number of decoys this state can send via self-transition (includes initial transition to
+    /// this state).
     pub(crate) decoy_budget: Option<usize>,
 }
 
 impl State {
-    /// Create a new state with the given [`TransitionProbs`] and [`Action`] to take on transition.
+    /// Create a new state with the given [`TransitionProbs`], [`Action`] to take on transition, and
+    /// a budget for the number of decoys the state can send during self-transition.
     pub fn new(
         trans_probs: impl Into<Option<TransitionProbs>>,
         action: impl Into<Action>,
@@ -65,7 +67,7 @@ impl TryFrom<(usize, f32)> for Transition {
 pub struct TransitionProbs(pub HashMap<Event, Vec<Transition>>);
 
 impl TransitionProbs {
-    /// Construct a new [`TransitionProbs`] using the given [`Event`] to [`Transition`] mapping pairs.
+    /// Construct a new [`TransitionProbs`] using the given [`Event`] to [`Vec<Transition>`] mapping pairs.
     ///
     /// # Caveat
     ///
@@ -93,13 +95,14 @@ impl TransitionProbs {
         let mut map: HashMap<Event, Vec<Transition>> = HashMap::new();
 
         for (event, transitions) in pairs {
-            let transitions = transitions.into();
-            let sum = transitions.iter().map(|transition| transition.prob).sum();
+            map.entry(event).or_default().extend(transitions.into());
+        }
+
+        for transitions in map.values() {
+            let sum: f32 = transitions.iter().map(|t| t.prob).sum();
             if !(0.0..=1.0).contains(&sum) {
                 return Err(ValidationError::BadTransitionProbs(sum));
             }
-
-            map.entry(event).or_default().extend(transitions);
         }
 
         Ok(Self(map))
@@ -242,5 +245,21 @@ mod tests {
 
         let receive_transitions = trans_probs.get(Event::ReceiveNormal);
         assert!(receive_transitions.is_none());
+    }
+
+    #[test]
+    fn test_probs_validation_multiple_same_event() {
+        let over_1_combined = TransitionProbs::new([
+            (Event::SendNormal, [(0, 0.6).try_into().unwrap()]),
+            (Event::SendNormal, [(1, 0.5).try_into().unwrap()]),
+        ]);
+
+        #[expect(clippy::float_cmp)]
+        match over_1_combined {
+            Err(ValidationError::BadTransitionProbs(prob)) => {
+                assert_eq!(prob, 1.1);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }

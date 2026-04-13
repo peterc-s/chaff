@@ -73,6 +73,9 @@ impl<R: Rng> Framework<R> {
     ///
     /// Returns only [`IntegratorAction`]s, any [`crate::action::FrameworkAction`]s resulting from
     /// processing events or popping queues will be taken by the [`Framework`] before returning.
+    ///
+    /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
+    /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
         let mut integrator_actions = vec![];
         let mut framework_actions = vec![];
@@ -90,8 +93,10 @@ impl<R: Rng> Framework<R> {
              integrator_actions: &mut Vec<IntegratorAction>| {
                 if matches!(action, IntegratorAction::SendDecoy)
                     && let Some(budget) = current_budget
-                    && *budget > 0
                 {
+                    if *budget == 0 {
+                        return;
+                    }
                     *budget = budget.saturating_sub(1);
                     if *budget == 0 {
                         new_deferred_events.push(Event::StateBudgetExhausted);
@@ -109,9 +114,15 @@ impl<R: Rng> Framework<R> {
                 .and_then(|state| state.trans_probs.as_ref())
                 .and_then(|trans_probs| trans_probs.trigger(&mut self.rng, *event))
             {
+                let is_new_state = self.runtime.state != new_state;
                 self.runtime.state = new_state;
 
-                self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+                if is_new_state {
+                    self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+                    if self.runtime.current_budget == Some(0) {
+                        new_deferred_events.push(Event::StateBudgetExhausted);
+                    }
+                }
 
                 match &self.machine.states[new_state].action {
                     Action::Framework(framework_action) => {
@@ -735,5 +746,48 @@ mod tests {
 
         framework.process(&[], now);
         assert_eq!(framework.get_state(), 1);
+    }
+
+    #[test]
+    fn test_state_budget_zero_and_self_transitions() {
+        let machine = machine! {
+            queues: [],
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::ReceiveNormal => decoy_burst],
+            },
+            state decoy_burst {
+                action: IntegratorAction::SendDecoy,
+                transitions: [
+                    Event::SendNormal => decoy_burst,
+                    Event::StateBudgetExhausted => end
+                ],
+                budget: 2,
+            },
+            state end {
+                action: IntegratorAction::SendDecoy,
+                budget: 0,
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        // transition to `decoy_burst`
+        let actions = framework.process(&[Event::ReceiveNormal], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 1);
+
+        // self-transition, should exhaust budget
+        let actions = framework.process(&[Event::SendNormal], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.get_state(), 1);
+
+        // deferred exhaustion should transition to end, the send decoy should
+        // be blocked because `end` has a budget of 0.
+        let actions = framework.process(&[], now);
+        assert_eq!(framework.get_state(), 2);
+        assert!(actions.is_empty());
     }
 }
