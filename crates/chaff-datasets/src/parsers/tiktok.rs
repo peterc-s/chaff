@@ -6,7 +6,7 @@
 //! Each file in DT representation consists of as many lines as packets in the trace, each in the
 //! following format: `<timestamp (s)> <directional size>`.
 
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, io::Read as _, path::Path};
 
 use chaff_capture::trace::{Direction, Trace, TraceBuilder};
 
@@ -115,39 +115,51 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
             message: "expected two unsigned integers separated by hyphens".to_string(),
         })?;
 
-        let content = fs::read_to_string(entry.path()).map_err(ParseError::Io)?;
-        let mut trace_builder: Option<TraceBuilder> = None;
+        let is_chaff = {
+            let mut f = fs::File::open(entry.path()).map_err(ParseError::Io)?;
+            let mut magic = [0u8; 5];
+            if f.read_exact(&mut magic).is_ok() {
+                magic == *chaff_capture::trace::TRACE_MAGIC
+            } else {
+                false
+            }
+        };
 
-        for (line_num, line) in content.lines().enumerate() {
-            if line.is_empty() {
-                continue;
+        let trace = if is_chaff {
+            Trace::deserialise(&entry.path()).map_err(ParseError::ChaffSerDe)?
+        } else {
+            let content = fs::read_to_string(entry.path()).map_err(ParseError::Io)?;
+            let mut trace_builder = TraceBuilder::default();
+
+            for (line_num, line) in content.lines().enumerate() {
+                if line.is_empty() {
+                    continue;
+                }
+
+                let (timestamp_microsec, dir_size) =
+                    parse_line(line).ok_or_else(|| ParseError::InvalidFormat {
+                        file: entry.path(),
+                        line: line_num + 1,
+                        message: format!("invalid line format: {line}"),
+                    })?;
+
+                let size = dir_size.unsigned_abs();
+                let direction = if dir_size > 0 {
+                    Direction::Send
+                } else {
+                    Direction::Receive
+                };
+
+                trace_builder.record(direction, timestamp_microsec, size);
             }
 
-            let (timestamp_microsec, dir_size) =
-                parse_line(line).ok_or_else(|| ParseError::InvalidFormat {
-                    file: entry.path(),
-                    line: line_num + 1,
-                    message: format!("invalid line format: {line}"),
-                })?;
+            trace_builder.build()
+        };
 
-            let size = dir_size.unsigned_abs();
-            let direction = if dir_size > 0 {
-                Direction::Send
-            } else {
-                Direction::Receive
-            };
-
-            trace_builder
-                .get_or_insert_with(TraceBuilder::default)
-                .record(direction, timestamp_microsec, size);
-        }
-
-        if let Some(builder) = trace_builder {
-            data_with_instance
-                .entry(class)
-                .or_default()
-                .push((instance, builder.build()));
-        }
+        data_with_instance
+            .entry(class)
+            .or_default()
+            .push((instance, trace));
     }
 
     let mut data = HashMap::new();

@@ -5,6 +5,8 @@
 
 use std::{error::Error, fmt, io, path::PathBuf};
 
+use chaff_capture::errors::TraceError;
+
 /// Errors while parsing datasets.
 #[derive(Debug)]
 pub enum ParseError {
@@ -34,6 +36,9 @@ pub enum ParseError {
         /// The message from the parser.
         message: String,
     },
+
+    /// Chaff serialisation or deserialisation error.
+    ChaffSerDe(TraceError),
 }
 
 impl fmt::Display for ParseError {
@@ -55,6 +60,7 @@ impl fmt::Display for ParseError {
                 "invalid format in {} at line {line}: {message}",
                 file.display()
             ),
+            Self::ChaffSerDe(err) => write!(f, "chaff (de)serialisation error: {err}"),
         }
     }
 }
@@ -63,6 +69,7 @@ impl Error for ParseError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(err) => Some(err),
+            Self::ChaffSerDe(err) => Some(err),
             Self::NotADirectory(_) | Self::InvalidFormat { .. } | Self::InvalidFileName { .. } => {
                 None
             }

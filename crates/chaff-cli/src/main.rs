@@ -82,6 +82,25 @@ pub enum CliOptions {
         #[bpaf(short, long)]
         mac: Option<String>,
     },
+
+    /// Convert a dataset into the chaff trace format.
+    #[bpaf(command("dataset-convert"))]
+    DatasetConvert {
+        /// The type of dataset.
+        ///
+        /// Available:
+        /// - tiktok
+        #[bpaf(positional("TYPE"))]
+        dataset_type: String,
+
+        /// The path to the dataset directory.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
+
+        /// The path to output the dataset to. Defaults to <INPUT>.chaff
+        #[bpaf(positional("OUTPUT"))]
+        output: Option<PathBuf>,
+    },
 }
 
 /// Wrapper around [`run()`] with error printing.
@@ -136,7 +155,7 @@ fn run() -> Result<(), CliError> {
                 other => Err(CliError::UnknownDatasetType(other.to_string())),
             }?;
 
-            println!("Classes: {:#?}", dataset.classes());
+            println!("Classes: {:?}", dataset.classes());
             println!("Padding to: {}", dataset.get_pad_to());
             println!(
                 "Total packets: {}",
@@ -166,6 +185,38 @@ fn run() -> Result<(), CliError> {
             let mut cap = Capture::from_file(&pcap)?;
             let out = capture_to_trace(&mut cap, mac_address)?;
             out.serialise(&trace)?;
+        }
+        CliOptions::DatasetConvert {
+            dataset_type,
+            input,
+            output,
+        } => {
+            let output_path =
+                output.unwrap_or_else(|| input.clone().as_path().with_extension("chaff"));
+
+            println!(
+                "Converting {} to {}...",
+                input.display(),
+                output_path.display()
+            );
+
+            let dataset = match dataset_type.to_lowercase().as_str() {
+                "tiktok" => tiktok::try_parse(&input).map_err(CliError::Dataset)?,
+                other => return Err(CliError::UnknownDatasetType(other.to_string())),
+            };
+
+            std::fs::create_dir_all(&output_path)
+                .map_err(|e| CliError::from(chaff_capture::errors::TraceError::Io(e)))?;
+
+            for (class, traces) in dataset.get_dataset() {
+                for (i, trace) in traces.iter().enumerate() {
+                    let filename = format!("{class}-{i}");
+                    let file_path = output_path.join(filename);
+                    trace.serialise(&file_path)?;
+                }
+            }
+
+            println!("Converted dataset to {}", output_path.display());
         }
     }
 
