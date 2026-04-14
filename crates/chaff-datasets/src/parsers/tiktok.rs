@@ -6,12 +6,7 @@
 //! Each file in DT representation consists of as many lines as packets in the trace, each in the
 //! following format: `<timestamp (s)> <directional size>`.
 
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::{BufRead as _, BufReader},
-    path::Path,
-};
+use std::{collections::HashMap, fs, path::Path};
 
 use chaff_capture::trace::{Direction, Trace, TraceBuilder};
 
@@ -65,24 +60,17 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
             message: "expected two unsigned integers separated by hyphens".to_string(),
         })?;
 
-        let file = File::open(entry.path()).map_err(ParseError::Io)?;
-        let mut reader = BufReader::with_capacity(128 * 1024, file);
+        let content = fs::read_to_string(entry.path()).map_err(ParseError::Io)?;
         let mut trace_builder: Option<TraceBuilder> = None;
 
-        let mut line_buf = String::new();
-        let mut line_num = 0;
-
-        loop {
-            line_buf.clear();
-            let bytes_read = reader.read_line(&mut line_buf).map_err(ParseError::Io)?;
-            if bytes_read == 0 {
-                break;
+        for (line_num, line) in content.lines().enumerate() {
+            if line.is_empty() {
+                continue;
             }
 
-            let mut tokens = line_buf.split_whitespace();
+            let mut tokens = line.split_whitespace();
 
             let Some(tok_0) = tokens.next() else {
-                line_num += 1;
                 continue;
             };
 
@@ -121,8 +109,6 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
             trace_builder
                 .get_or_insert_with(TraceBuilder::default)
                 .record(direction, timestamp_microsec, size);
-
-            line_num += 1;
         }
 
         if let Some(builder) = trace_builder {
