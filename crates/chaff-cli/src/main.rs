@@ -65,8 +65,12 @@ pub enum CliOptions {
     },
 
     /// Convert a pcap into a chaff trace.
-    #[bpaf(command("convert"))]
-    Convert {
+    #[bpaf(command("cap-convert"))]
+    CapConvert {
+        /// MAC address to use as the local file.
+        #[bpaf(short, long)]
+        mac: Option<String>,
+
         /// Path to input pcap file.
         #[bpaf(positional("PCAP"))]
         pcap: PathBuf,
@@ -74,15 +78,15 @@ pub enum CliOptions {
         /// Path to output trace file.
         #[bpaf(positional("TRACE"))]
         trace: PathBuf,
-
-        /// MAC address to use as the local file.
-        #[bpaf(short, long)]
-        mac: Option<String>,
     },
 
     /// Convert a dataset into the chaff trace format.
     #[bpaf(command("dataset-convert"))]
     DatasetConvert {
+        /// The path to output the dataset to. Defaults to <INPUT>.chaff
+        #[bpaf(short, long)]
+        output: Option<PathBuf>,
+
         /// The type of dataset (available: tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
@@ -90,10 +94,6 @@ pub enum CliOptions {
         /// The path to the dataset directory.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
-
-        /// The path to output the dataset to. Defaults to <INPUT>.chaff
-        #[bpaf(positional("OUTPUT"))]
-        output: Option<PathBuf>,
     },
 }
 
@@ -169,7 +169,7 @@ fn run() -> Result<(), CliError> {
             println!("{}", sim.run());
             println!("{}", sim.framework.get_state());
         }
-        CliOptions::Convert { pcap, trace, mac } => {
+        CliOptions::CapConvert { pcap, trace, mac } => {
             let mac_address = if let Some(mac_string) = mac {
                 MacAddress::from_str(mac_string.as_str()).map_err(CliError::MacParse)?
             } else {
