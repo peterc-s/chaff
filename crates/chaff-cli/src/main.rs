@@ -47,10 +47,7 @@ pub enum CliOptions {
     /// Get statistics about a dataset.
     #[bpaf(command("dataset-stats"))]
     DatasetStats {
-        /// The type of dataset.
-        ///
-        /// Available:
-        /// - tiktok
+        /// The type of dataset (available: tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
 
@@ -86,10 +83,7 @@ pub enum CliOptions {
     /// Convert a dataset into the chaff trace format.
     #[bpaf(command("dataset-convert"))]
     DatasetConvert {
-        /// The type of dataset.
-        ///
-        /// Available:
-        /// - tiktok
+        /// The type of dataset (available: tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
 
