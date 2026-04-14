@@ -119,6 +119,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaff-datasets"
+version = "0.1.0"
+dependencies = [
+ "chaff",
+ "chaff-capture",
+]
+
+[[package]]
 name = "chaff-machines"
 version = "0.1.0"
 dependencies = [

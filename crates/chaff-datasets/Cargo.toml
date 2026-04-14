@@ -1,0 +1,21 @@
+[package]
+name = "chaff-datasets"
+description = "Library for parsing various datasets into chaff trace format."
+version = "0.1.0"
+readme = "README.md"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+chaff = { version = "0.1.0", path = "../chaff/" }
+chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }

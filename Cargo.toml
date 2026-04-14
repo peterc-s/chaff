@@ -18,6 +18,7 @@ members = [
     "crates/chaff-sim",
     "crates/chaff-machines",
     "crates/chaff-cli",
+    "crates/chaff-datasets",
 ]
 
 # https://doc.rust-lang.org/cargo/reference/workspaces.html#virtual-workspace
