@@ -66,38 +66,45 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
         })?;
 
         let file = File::open(entry.path()).map_err(ParseError::Io)?;
-        let reader = BufReader::new(file);
-
+        let mut reader = BufReader::with_capacity(128 * 1024, file);
         let mut trace_builder: Option<TraceBuilder> = None;
 
-        for (line_num, line) in reader.lines().enumerate() {
-            let line = line.map_err(ParseError::Io)?;
-            let line = line.trim();
+        let mut line_buf = String::new();
+        let mut line_num = 0;
 
-            if line.is_empty() {
-                continue;
+        loop {
+            line_buf.clear();
+            let bytes_read = reader.read_line(&mut line_buf).map_err(ParseError::Io)?;
+            if bytes_read == 0 {
+                break;
             }
 
-            let tokens: Vec<&str> = line.split_whitespace().collect();
-            if tokens.len() != 2 {
+            let mut tokens = line_buf.split_whitespace();
+
+            let Some(tok_0) = tokens.next() else {
+                line_num += 1;
+                continue;
+            };
+
+            let Some(tok_1) = tokens.next() else {
                 return Err(ParseError::InvalidFormat {
                     file: entry.path(),
                     line: line_num + 1,
                     message: "expected: <timestamp> <directional size>, but didn't get two parts"
                         .to_string(),
                 });
-            }
+            };
 
-            let timestamp_sec: f64 = tokens[0].parse().map_err(|_| ParseError::InvalidFormat {
+            let timestamp_sec: f64 = tok_0.parse().map_err(|_| ParseError::InvalidFormat {
                 file: entry.path(),
                 line: line_num + 1,
-                message: format!("invalid timestamp: {}", tokens[0]),
+                message: format!("invalid timestamp: {tok_0}"),
             })?;
 
-            let dir_size: i32 = tokens[1].parse().map_err(|_| ParseError::InvalidFormat {
+            let dir_size: i32 = tok_1.parse().map_err(|_| ParseError::InvalidFormat {
                 file: entry.path(),
                 line: line_num + 1,
-                message: format!("invalid directional size: {}", tokens[1]),
+                message: format!("invalid directional size: {tok_1}"),
             })?;
 
             #[expect(clippy::cast_sign_loss)]
@@ -114,6 +121,8 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
             trace_builder
                 .get_or_insert_with(TraceBuilder::default)
                 .record(direction, timestamp_microsec, size);
+
+            line_num += 1;
         }
 
         if let Some(builder) = trace_builder {
