@@ -2,3 +2,5 @@
 //! [`chaff_capture::trace::Trace`]s.
 
 pub mod dataset;
+pub mod errors;
+pub mod parsers;

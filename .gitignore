@@ -3,4 +3,10 @@
 
 .direnv/
 
+# datasets
 data
+
+# profiling
+flamegraph.svg
+perf.data
+perf.data.old

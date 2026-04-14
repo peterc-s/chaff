@@ -6,6 +6,7 @@
 use std::{error::Error, fmt};
 
 use chaff_capture::errors::{CaptureError, TraceError};
+use chaff_datasets::errors::ParseError;
 use mac_address::{MacAddressError, MacParseError};
 
 /// CLI errors
@@ -25,6 +26,12 @@ pub enum CliError {
 
     /// Errors from the [`pcap`] crate.
     Pcap(pcap::Error),
+
+    /// Dataset type given is not known/implemented.
+    UnknownDatasetType(String),
+
+    /// Error from a [`chaff_datasets`] parser.
+    Dataset(ParseError),
 }
 
 const RESET: &str = "\x1b[0m";
@@ -33,12 +40,12 @@ const RED: &str = "\x1b[31m";
 
 impl Error for CliError {
     fn cause(&self) -> Option<&dyn Error> {
-        #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             Self::Capture(e) => Some(e),
             Self::MacAddress(e) => Some(e),
             Self::MacParse(e) => Some(e),
             Self::Pcap(e) => Some(e),
+            Self::Dataset(e) => Some(e),
             _ => None,
         }
     }
@@ -53,6 +60,11 @@ impl fmt::Display for CliError {
             Self::MacAddress(e) => write!(f, "MAC address error: {e}"),
             Self::MacParse(e) => write!(f, "MAC parse error: {e}"),
             Self::Pcap(e) => write!(f, "pcap error: {e}"),
+            // TODO: maybe improve this error a bit.
+            Self::UnknownDatasetType(dataset_type) => {
+                write!(f, "unknown dataset type '{dataset_type}'")
+            }
+            Self::Dataset(e) => write!(f, "dataset error: {e}"),
         }
     }
 }

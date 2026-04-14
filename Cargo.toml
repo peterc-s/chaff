@@ -15,10 +15,11 @@ rust-version = "1.89.0"
 # https://blog.iany.me/2020/10/gotchas-to-publish-rust-crates-in-a-workspace/#cyclic-dependencies
 members = [
     "crates/chaff",
-    "crates/chaff-sim",
     "crates/chaff-machines",
-    "crates/chaff-cli",
+    "crates/chaff-capture",
+    "crates/chaff-sim",
     "crates/chaff-datasets",
+    "crates/chaff-cli",
 ]
 
 # https://doc.rust-lang.org/cargo/reference/workspaces.html#virtual-workspace

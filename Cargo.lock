@@ -111,6 +111,7 @@ dependencies = [
  "bpaf",
  "chaff",
  "chaff-capture",
+ "chaff-datasets",
  "chaff-machines",
  "chaff-sim",
  "mac_address",

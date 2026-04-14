@@ -14,6 +14,7 @@ use chaff_capture::{
     trace::Trace,
 };
 use chaff_cli::errors::CliError;
+use chaff_datasets::parsers::tiktok;
 use chaff_machines::test::construct_test_machine;
 use chaff_sim::Simulator;
 use mac_address::{MacAddress, MacAddressError, get_mac_address};
@@ -23,8 +24,8 @@ use pcap::Capture;
 #[derive(Debug, Clone, Bpaf)]
 #[bpaf(options, version)]
 pub enum CliOptions {
-    #[bpaf(command("capture"))]
     /// Capture a traffic trace.
+    #[bpaf(command("capture"))]
     Capture {
         /// Path to output file.
         #[bpaf(short, long)]
@@ -35,24 +36,39 @@ pub enum CliOptions {
         ifname: Option<String>,
     },
 
-    #[bpaf(command("trace-stats"))]
     /// Get statistics about a trace.
+    #[bpaf(command("trace-stats"))]
     TraceStats {
         /// Path to trace file.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
     },
 
-    #[bpaf(command("sim"))]
+    /// Get statistics about a dataset.
+    #[bpaf(command("dataset-stats"))]
+    DatasetStats {
+        /// The type of dataset.
+        ///
+        /// Available:
+        /// - tiktok
+        #[bpaf(positional("TYPE"))]
+        dataset_type: String,
+
+        /// The path to the dataset directory.
+        #[bpaf(positional("PATH"))]
+        path: PathBuf,
+    },
+
     /// Simulate defences.
+    #[bpaf(command("sim"))]
     Simulate {
         /// Path to trace file to simulate a machine on.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
     },
 
-    #[bpaf(command("convert"))]
     /// Convert a pcap into a chaff trace.
+    #[bpaf(command("convert"))]
     Convert {
         /// Path to input pcap file.
         #[bpaf(positional("PCAP"))]
@@ -113,6 +129,23 @@ fn run() -> Result<(), CliError> {
         CliOptions::TraceStats { input } => {
             let trace = Trace::deserialise(&input)?;
             println!("Packets: {}", trace.directions.len());
+        }
+        CliOptions::DatasetStats { dataset_type, path } => {
+            let dataset = match dataset_type.to_lowercase().as_str() {
+                "tiktok" => tiktok::try_parse(path).map_err(CliError::Dataset),
+                other => Err(CliError::UnknownDatasetType(other.to_string())),
+            }?;
+
+            println!("Classes: {:#?}", dataset.classes());
+            println!("Padding to: {}", dataset.get_pad_to());
+            println!(
+                "Total packets: {}",
+                dataset
+                    .get_dataset()
+                    .iter()
+                    .flat_map(|(_, traces)| traces.iter().map(|trace| trace.len() as u64))
+                    .sum::<u64>()
+            );
         }
         CliOptions::Simulate { input } => {
             let trace = Trace::deserialise(&input)?;

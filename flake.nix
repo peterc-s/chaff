@@ -70,10 +70,11 @@
         buildInputs = with pkgs; [libpcap];
         extraShellInputs = with pkgs; [
           cargo-audit
-          cargo-nextest
+          cargo-flamegraph
           cargo-machete
-          cargo-tarpaulin
+          cargo-nextest
           cargo-outdated
+          cargo-tarpaulin
         ];
       in {
         formatter = treefmtConfig.config.build.wrapper;
