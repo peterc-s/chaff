@@ -15,75 +15,76 @@ use crate::{dataset::Dataset, errors::ParseError};
 /// Parse a full line. This function makes a few assumptions about the dataset and does not
 /// handle errors very gracefully.
 fn parse_line(line: &str) -> Option<(u64, i32)> {
-    let bytes = line.as_bytes();
-    let mut idx = 0;
-    let len = bytes.len();
+    const MULTIPLIERS: [u64; 7] = [1_000_000, 100_000, 10_000, 1_000, 100, 10, 1];
 
-    // skip whitespace
-    while idx < len && bytes[idx].is_ascii_whitespace() {
-        idx += 1;
-    }
+    let mut bytes = line.as_bytes().iter().copied();
 
-    // parse integer part of timestamp
+    // skip leading whitespace
+    let mut b = bytes.find(|&c| !c.is_ascii_whitespace())?;
+
+    // parse timestamp integer part
     let mut secs = 0u64;
-    while idx < len && bytes[idx].is_ascii_digit() {
-        secs = secs * 10 + u64::from(bytes[idx] - b'0');
-        idx += 1;
+    while b.is_ascii_digit() {
+        secs = secs * 10 + u64::from(b - b'0');
+        b = bytes.next()?;
     }
 
     let mut microsecs = secs * 1_000_000;
 
-    // parse fractional part of timestamp
-    if idx < len && bytes[idx] == b'.' {
-        idx += 1;
+    // parse timestamp fractional part
+    if b == b'.' {
         let mut fraction = 0u64;
         let mut digits = 0;
 
-        while idx < len && bytes[idx].is_ascii_digit() {
-            if digits < 6 {
-                fraction = fraction * 10 + u64::from(bytes[idx] - b'0');
-                digits += 1;
-            }
-            idx += 1;
-        }
+        b = bytes.next()?;
 
-        while digits < 6 {
-            fraction *= 10;
+        while digits < 6 && b.is_ascii_digit() {
+            fraction = fraction * 10 + u64::from(b - b'0');
             digits += 1;
+
+            if let Some(next_b) = bytes.next() {
+                b = next_b;
+            } else {
+                break;
+            }
         }
 
-        microsecs += fraction;
+        // discard digits beyond the 6th
+        while b.is_ascii_digit() {
+            if let Some(next_b) = bytes.next() {
+                b = next_b;
+            } else {
+                break;
+            }
+        }
+
+        microsecs += fraction * MULTIPLIERS[digits];
     }
 
-    // skip whitespace between timestamp and directional size
-    while idx < len && bytes[idx].is_ascii_whitespace() {
-        idx += 1;
-    }
-
-    // missing directional size
-    if idx == len {
-        return None;
+    // skip whitespace between numbers
+    while b.is_ascii_whitespace() {
+        b = bytes.next()?;
     }
 
     // parse directional size
     let mut dir_size = 0i32;
     let mut is_negative = false;
 
-    if bytes[idx] == b'-' {
+    if b == b'-' {
         is_negative = true;
-        idx += 1;
+        b = bytes.next()?;
     }
 
-    while idx < len && bytes[idx].is_ascii_digit() {
-        dir_size = dir_size * 10 + i32::from(bytes[idx] - b'0');
-        idx += 1;
+    while b.is_ascii_digit() {
+        dir_size = dir_size * 10 + i32::from(b - b'0');
+        if let Some(next_b) = bytes.next() {
+            b = next_b;
+        } else {
+            break;
+        }
     }
 
-    if is_negative {
-        dir_size = -dir_size;
-    }
-
-    Some((microsecs, dir_size))
+    Some((microsecs, if is_negative { -dir_size } else { dir_size }))
 }
 
 /// Parse a [Tik-Tok](https://github.com/msrocean/Tik_Tok) dataset into a [`Dataset`].
