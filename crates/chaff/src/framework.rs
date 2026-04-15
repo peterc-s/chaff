@@ -145,6 +145,9 @@ impl<R: Rng> Framework<R> {
         let queue_popped_binding = self.runtime.pop_queues(now);
         queue_popped_binding.iter().for_each(|(idx, action)| {
             new_deferred_events.push(Event::QueuePopped(*idx));
+            if self.runtime.queues[*idx as usize].is_empty() {
+                new_deferred_events.push(Event::QueueEmpty(*idx));
+            }
             match action {
                 Action::Framework(framework_action) => {
                     framework_actions.push(framework_action.clone());
@@ -569,9 +572,9 @@ mod tests {
             "state should not change in the same tick as the pop"
         );
         assert_eq!(
-            framework.runtime.deferred_events.len(),
-            1,
-            "queue pop event should be deferred"
+            framework.runtime.deferred_events,
+            [Event::QueuePopped(0), Event::QueueEmpty(0)],
+            "queue pop and queue empty event should be deferred"
         );
 
         let actions = framework.process(&[], now);
@@ -790,5 +793,60 @@ mod tests {
         let actions = framework.process(&[], now);
         assert_eq!(framework.get_state(), 2);
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_queue_empty() {
+        let machine = machine! {
+            queues: [Some(2)],
+            state init {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::ReceiveNormal => fill_queue],
+            },
+            state fill_queue {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    Duration::from_millis(15)
+                ),
+                transitions: [
+                    Event::SendNormal => fill_queue,
+                    Event::ReceiveNormal => wait_for_queue_drain
+                ],
+            },
+            state wait_for_queue_drain {
+                action: IntegratorAction::ReleaseBlock,
+                transitions: [Event::QueueEmpty(0) => end],
+            },
+            state end {
+                action: IntegratorAction::ReleaseBlock,
+            }
+        }
+        .unwrap();
+
+        let mut framework = Framework::new(machine, rand::rng());
+        let now = Instant::now();
+
+        framework.process(&[Event::ReceiveNormal], now);
+        assert_eq!(framework.runtime.state, 1);
+
+        framework.process(&[Event::SendNormal, Event::SendNormal], now);
+        assert_eq!(framework.runtime.state, 1);
+
+        framework.process(&[Event::ReceiveNormal], now);
+        assert_eq!(framework.runtime.state, 2);
+
+        // drain queue
+        let now = now + Duration::from_millis(16);
+        let actions = framework.process(&[], now);
+        assert_eq!(
+            *actions,
+            [IntegratorAction::SendDecoy, IntegratorAction::SendDecoy]
+        );
+        assert_eq!(framework.runtime.state, 2);
+
+        // deferred event should cause transition
+        framework.process(&[], now);
+        assert_eq!(framework.runtime.state, 3);
     }
 }
