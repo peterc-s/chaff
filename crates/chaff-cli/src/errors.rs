@@ -3,7 +3,7 @@
 // Not unit testable.
 #![cfg(not(tarpaulin_include))]
 
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, io};
 
 use chaff_capture::errors::{CaptureError, TraceError};
 use chaff_datasets::errors::ParseError;
@@ -32,6 +32,9 @@ pub enum CliError {
 
     /// Error from a [`chaff_datasets`] parser.
     Dataset(ParseError),
+
+    /// An IO error in the top-level CLI.
+    Io(io::Error),
 }
 
 const RESET: &str = "\x1b[0m";
@@ -46,6 +49,7 @@ impl Error for CliError {
             Self::MacParse(e) => Some(e),
             Self::Pcap(e) => Some(e),
             Self::Dataset(e) => Some(e),
+            Self::Io(e) => Some(e),
             _ => None,
         }
     }
@@ -65,6 +69,7 @@ impl fmt::Display for CliError {
                 write!(f, "unknown dataset type '{dataset_type}'")
             }
             Self::Dataset(e) => write!(f, "dataset error: {e}"),
+            Self::Io(e) => write!(f, "io error: {e}"),
         }
     }
 }
@@ -96,5 +101,11 @@ impl From<CaptureError> for CliError {
 impl From<TraceError> for CliError {
     fn from(e: TraceError) -> Self {
         Self::Capture(CaptureError::Trace(e))
+    }
+}
+
+impl From<io::Error> for CliError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
     }
 }

@@ -9,6 +9,14 @@ use pcap::Capture;
 use crate::errors::CliError;
 
 /// Run the pcap conversion subcommand.
+///
+/// # Errors
+///
+/// - If parsing the given MAC address fails ([`MacAddress::from_str`]).
+/// - If a MAC wasn't given and we weren't successful in getting a MAC address from the system ([`get_mac_address`]).
+/// - If parsing or opening the pcap fails ([`Capture::from_file`]).
+/// - If converting the pcap to a trace fails ([`capture_to_trace`]).
+/// - If serialising the trace fails ([`chaff_capture::trace::Trace::serialise`]).
 pub fn run(mac: Option<String>, pcap: &PathBuf, trace: &PathBuf) -> Result<(), CliError> {
     let mac_address = if let Some(mac_string) = mac {
         MacAddress::from_str(mac_string.as_str()).map_err(CliError::MacParse)?

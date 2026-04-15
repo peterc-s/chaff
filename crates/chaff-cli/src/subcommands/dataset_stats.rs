@@ -2,16 +2,15 @@
 
 use std::path::PathBuf;
 
-use chaff_datasets::parsers::tiktok;
-
-use crate::errors::CliError;
+use crate::{errors::CliError, utils::parse_dataset};
 
 /// Run the dataset-stats subcommand.
-pub fn run(dataset_type: &str, path: PathBuf) -> Result<(), CliError> {
-    let dataset = match dataset_type.to_lowercase().as_str() {
-        "tiktok" => tiktok::try_parse(path).map_err(CliError::Dataset),
-        other => Err(CliError::UnknownDatasetType(other.to_string())),
-    }?;
+///
+/// # Errors
+///
+/// - If parsing the dataset fails ([`parse_dataset`] and the parser's `try_parse`, for example [`chaff_datasets::parsers::tiktok::try_parse`]).
+pub fn run(dataset_type: &str, path: &PathBuf) -> Result<(), CliError> {
+    let dataset = parse_dataset(dataset_type, path)?;
 
     println!("Classes: {:?}", dataset.classes());
     println!("Padding to: {}", dataset.get_pad_to());

@@ -105,7 +105,7 @@ fn run() -> Result<(), CliError> {
     match cli_opts {
         CliOptions::Capture { output, ifname } => capture::run(output, ifname),
         CliOptions::TraceStats { input } => trace_stats::run(&input),
-        CliOptions::DatasetStats { dataset_type, path } => dataset_stats::run(&dataset_type, path),
+        CliOptions::DatasetStats { dataset_type, path } => dataset_stats::run(&dataset_type, &path),
         CliOptions::Simulate { input } => simulate::run(&input),
         CliOptions::CapConvert { pcap, trace, mac } => cap_convert::run(mac, &pcap, &trace),
         CliOptions::DatasetConvert {
