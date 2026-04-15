@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use chaff_capture::trace::Trace;
 
 /// The main dataset type for [`crate`].
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dataset {
     /// The actual dataset.
     pub(crate) data: HashMap<String, Box<[Trace]>>,

@@ -6,9 +6,10 @@
 //! Each file in DT representation consists of as many lines as packets in the trace, each in the
 //! following format: `<timestamp (s)> <directional size>`.
 
+use core::fmt;
 use std::{collections::HashMap, fs, io::Read as _, path::Path};
 
-use chaff_capture::trace::{Direction, Trace, TraceBuilder};
+use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 
 use crate::{dataset::Dataset, errors::ParseError};
 
@@ -27,7 +28,7 @@ fn parse_line(line: &str) -> Option<(u64, i32)> {
     let timestamp_sec: f64 = ts_str.parse().ok()?;
 
     #[expect(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let timestamp_microsec = (timestamp_sec * 1_000_000.0) as u64;
+    let timestamp_microsec = (timestamp_sec * 1_000_000.0).round() as u64;
 
     // find the start of the directional size
     let mut dir_start = space_idx;
@@ -174,4 +175,100 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
 
     // 5000 is the padding documented by the Tik-Tok authors.
     Ok(Dataset { data, pad_to: 5000 })
+}
+
+/// Wrapper struct for displaying/formatting a [`Trace`] in Tik-Tok format as described
+/// [here](crate::parsers::tiktok). Implements [`fmt::Display`].
+pub struct TikTokDisplay<'a>(pub &'a Trace);
+
+impl fmt::Display for TikTokDisplay<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut time = 0;
+        for TracePacket(dir, delta, size) in self.0 {
+            time += delta;
+            let secs = time / 1_000_000;
+            let micros = time % 1_000_000;
+            let directional_size: i64 = match dir {
+                Direction::Send => size.into(),
+                Direction::Receive => -i64::from(size),
+            };
+            writeln!(f, "{secs}.{micros:06}\t{directional_size}")?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use std::{fs, path::PathBuf};
+
+    use chaff_capture::trace::{Direction, TraceBuilder};
+
+    use crate::parsers::tiktok::{self, TikTokDisplay, parse_line};
+
+    #[test]
+    fn test_chaff_vs_original() {
+        let mut path_original = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path_original.push("test-datasets/tiktok");
+        let mut path_chaff = path_original.clone();
+        path_original.push("original");
+        path_chaff.push("chaff");
+
+        let original_dataset = tiktok::try_parse(path_original).unwrap();
+        let chaff_dataset = tiktok::try_parse(path_chaff).unwrap();
+
+        assert_eq!(original_dataset, chaff_dataset);
+    }
+
+    #[test]
+    fn test_roundtrip_trace() {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-datasets/tiktok/original/35-0");
+
+        // parse original trace manually
+        let original_str = fs::read_to_string(&path).unwrap();
+        let mut builder = TraceBuilder::default();
+        for line in original_str.lines() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let (ts, dir_size) = parse_line(line).unwrap();
+
+            let size = dir_size.unsigned_abs();
+            let direction = if dir_size > 0 {
+                Direction::Send
+            } else {
+                Direction::Receive
+            };
+
+            builder.record(direction, ts, size);
+        }
+        let original_trace = builder.build();
+
+        // now format the original trace and try parse that
+        let formatted = format!("{}", TikTokDisplay(&original_trace));
+        let mut builder2 = TraceBuilder::default();
+        for line in formatted.lines() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let (ts, dir_size) = parse_line(line).unwrap();
+
+            let size = dir_size.unsigned_abs();
+            let direction = if dir_size > 0 {
+                Direction::Send
+            } else {
+                Direction::Receive
+            };
+
+            builder2.record(direction, ts, size);
+        }
+        let reparsed_trace = builder2.build();
+
+        // they should be equivalent
+        assert_eq!(original_trace, reparsed_trace);
+    }
 }
