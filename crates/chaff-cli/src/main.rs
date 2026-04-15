@@ -1,7 +1,7 @@
 //! The command-line interface for interacting with the `chaff` anti website fingerprinting
 //! framework.
 
-// Not unit-testable
+// Not currently tested.
 #![cfg(not(tarpaulin_include))]
 
 use std::path::PathBuf;
