@@ -111,11 +111,20 @@ dependencies = [
  "bpaf",
  "chaff",
  "chaff-capture",
+ "chaff-datasets",
  "chaff-machines",
  "chaff-sim",
  "mac_address",
  "pcap",
  "rand",
+]
+
+[[package]]
+name = "chaff-datasets"
+version = "0.1.0"
+dependencies = [
+ "chaff",
+ "chaff-capture",
 ]
 
 [[package]]

@@ -21,6 +21,7 @@ chaff = { version = "0.1.0", path = "../chaff/" }
 chaff-sim = { version = "0.1.0", path = "../chaff-sim/" }
 chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }
+chaff-datasets = { version = "0.1.0", path = "../chaff-datasets/" }
 
 bpaf = { version = "0.9.24", features = ["derive"] }
 rand = "0.10.1"

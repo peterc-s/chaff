@@ -14,6 +14,7 @@ use chaff_capture::{
     trace::Trace,
 };
 use chaff_cli::errors::CliError;
+use chaff_datasets::parsers::tiktok;
 use chaff_machines::test::construct_test_machine;
 use chaff_sim::Simulator;
 use mac_address::{MacAddress, MacAddressError, get_mac_address};
@@ -23,8 +24,8 @@ use pcap::Capture;
 #[derive(Debug, Clone, Bpaf)]
 #[bpaf(options, version)]
 pub enum CliOptions {
-    #[bpaf(command("capture"))]
     /// Capture a traffic trace.
+    #[bpaf(command("capture"))]
     Capture {
         /// Path to output file.
         #[bpaf(short, long)]
@@ -35,25 +36,41 @@ pub enum CliOptions {
         ifname: Option<String>,
     },
 
-    #[bpaf(command("trace-stats"))]
     /// Get statistics about a trace.
+    #[bpaf(command("trace-stats"))]
     TraceStats {
         /// Path to trace file.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
     },
 
-    #[bpaf(command("sim"))]
+    /// Get statistics about a dataset.
+    #[bpaf(command("dataset-stats"))]
+    DatasetStats {
+        /// The type of dataset (available: tiktok).
+        #[bpaf(positional("TYPE"))]
+        dataset_type: String,
+
+        /// The path to the dataset directory.
+        #[bpaf(positional("PATH"))]
+        path: PathBuf,
+    },
+
     /// Simulate defences.
+    #[bpaf(command("sim"))]
     Simulate {
         /// Path to trace file to simulate a machine on.
         #[bpaf(positional("INPUT"))]
         input: PathBuf,
     },
 
-    #[bpaf(command("convert"))]
     /// Convert a pcap into a chaff trace.
-    Convert {
+    #[bpaf(command("cap-convert"))]
+    CapConvert {
+        /// MAC address to use as the local file.
+        #[bpaf(short, long)]
+        mac: Option<String>,
+
         /// Path to input pcap file.
         #[bpaf(positional("PCAP"))]
         pcap: PathBuf,
@@ -61,10 +78,22 @@ pub enum CliOptions {
         /// Path to output trace file.
         #[bpaf(positional("TRACE"))]
         trace: PathBuf,
+    },
 
-        /// MAC address to use as the local file.
+    /// Convert a dataset into the chaff trace format.
+    #[bpaf(command("dataset-convert"))]
+    DatasetConvert {
+        /// The path to output the dataset to. Defaults to <INPUT>.chaff
         #[bpaf(short, long)]
-        mac: Option<String>,
+        output: Option<PathBuf>,
+
+        /// The type of dataset (available: tiktok).
+        #[bpaf(positional("TYPE"))]
+        dataset_type: String,
+
+        /// The path to the dataset directory.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
     },
 }
 
@@ -114,6 +143,23 @@ fn run() -> Result<(), CliError> {
             let trace = Trace::deserialise(&input)?;
             println!("Packets: {}", trace.directions.len());
         }
+        CliOptions::DatasetStats { dataset_type, path } => {
+            let dataset = match dataset_type.to_lowercase().as_str() {
+                "tiktok" => tiktok::try_parse(path).map_err(CliError::Dataset),
+                other => Err(CliError::UnknownDatasetType(other.to_string())),
+            }?;
+
+            println!("Classes: {:?}", dataset.classes());
+            println!("Padding to: {}", dataset.get_pad_to());
+            println!(
+                "Total packets: {}",
+                dataset
+                    .get_dataset()
+                    .iter()
+                    .flat_map(|(_, traces)| traces.iter().map(|trace| trace.len() as u64))
+                    .sum::<u64>()
+            );
+        }
         CliOptions::Simulate { input } => {
             let trace = Trace::deserialise(&input)?;
             let machine = construct_test_machine();
@@ -123,7 +169,7 @@ fn run() -> Result<(), CliError> {
             println!("{}", sim.run());
             println!("{}", sim.framework.get_state());
         }
-        CliOptions::Convert { pcap, trace, mac } => {
+        CliOptions::CapConvert { pcap, trace, mac } => {
             let mac_address = if let Some(mac_string) = mac {
                 MacAddress::from_str(mac_string.as_str()).map_err(CliError::MacParse)?
             } else {
@@ -133,6 +179,38 @@ fn run() -> Result<(), CliError> {
             let mut cap = Capture::from_file(&pcap)?;
             let out = capture_to_trace(&mut cap, mac_address)?;
             out.serialise(&trace)?;
+        }
+        CliOptions::DatasetConvert {
+            dataset_type,
+            input,
+            output,
+        } => {
+            let output_path =
+                output.unwrap_or_else(|| input.clone().as_path().with_extension("chaff"));
+
+            println!(
+                "Converting {} to {}...",
+                input.display(),
+                output_path.display()
+            );
+
+            let dataset = match dataset_type.to_lowercase().as_str() {
+                "tiktok" => tiktok::try_parse(&input).map_err(CliError::Dataset)?,
+                other => return Err(CliError::UnknownDatasetType(other.to_string())),
+            };
+
+            std::fs::create_dir_all(&output_path)
+                .map_err(|e| CliError::from(chaff_capture::errors::TraceError::Io(e)))?;
+
+            for (class, traces) in dataset.get_dataset() {
+                for (i, trace) in traces.iter().enumerate() {
+                    let filename = format!("{class}-{i}");
+                    let file_path = output_path.join(filename);
+                    trace.serialise(&file_path)?;
+                }
+            }
+
+            println!("Converted dataset to {}", output_path.display());
         }
     }
 
