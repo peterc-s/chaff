@@ -37,9 +37,6 @@ fn parse_line(line: &str) -> Option<(u64, i32)> {
     }
 
     let mut dir_bytes = &bytes[dir_start..];
-    if dir_bytes.is_empty() {
-        return None;
-    }
 
     // parse directional size
     let mut dir_size = 0i32;
@@ -48,6 +45,10 @@ fn parse_line(line: &str) -> Option<(u64, i32)> {
     if dir_bytes[0] == b'-' {
         is_negative = true;
         dir_bytes = &dir_bytes[1..];
+
+        if dir_bytes.is_empty() {
+            return None;
+        }
     }
 
     for &b in dir_bytes {
@@ -199,13 +200,30 @@ impl fmt::Display for TikTokDisplay<'_> {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::{fs, path::PathBuf};
 
     use chaff_capture::trace::{Direction, TraceBuilder};
 
-    use crate::parsers::tiktok::{self, TikTokDisplay, parse_line};
+    use crate::{
+        errors::ParseError,
+        parsers::tiktok::{self, TikTokDisplay, parse_line},
+    };
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "chaff-tests-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn test_chaff_vs_original() {
@@ -270,5 +288,174 @@ mod tests {
 
         // they should be equivalent
         assert_eq!(original_trace, reparsed_trace);
+    }
+
+    #[test]
+    fn test_parse_line_trims_whitespace_and_tabs() {
+        let (ts, dir_size) = parse_line("  1.000001\t-42  ").unwrap();
+        assert_eq!(ts, 1_000_001);
+        assert_eq!(dir_size, -42);
+    }
+
+    #[test]
+    fn test_parse_line_rejects_missing_space_separator() {
+        assert!(parse_line("1.0-42").is_none());
+    }
+
+    #[test]
+    fn test_parse_line_rejects_missing_directional_size() {
+        assert!(parse_line("1.23 ").is_none());
+        assert!(parse_line("1.23\t").is_none());
+    }
+
+    #[test]
+    fn test_parse_line_rejects_non_numeric_timestamp() {
+        assert!(parse_line("abc 10").is_none());
+        assert!(parse_line("1..2 10").is_none());
+    }
+
+    #[test]
+    fn test_parse_line_rejects_non_numeric_directional_size() {
+        assert!(parse_line("1.23 +10").is_none());
+        assert!(parse_line("1.23 10x").is_none());
+        assert!(parse_line("1.23 -").is_none());
+        assert!(parse_line("1.23 --10").is_none());
+    }
+
+    #[test]
+    fn test_try_parse_rejects_not_a_directory() {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test-datasets/tiktok/original/35-0");
+
+        let err = tiktok::try_parse(&path).unwrap_err();
+
+        match err {
+            ParseError::NotADirectory(p) => assert_eq!(p, path),
+            other => panic!("unexpected result: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_try_parse_skips_invalid_filenames() {
+        let tmp = temp_dir("test_try_parse_skips_invalid_filenames");
+        let dir = tmp.as_path();
+
+        fs::write(dir.join("badname"), "0.000001 1\n").unwrap();
+        fs::write(dir.join("1-0"), "0.000001 1\n0.000002 -1\n").unwrap();
+
+        let dataset = tiktok::try_parse(dir).unwrap();
+
+        let traces = dataset
+            .data
+            .get("1")
+            .expect("expected class '1' in dataset");
+        assert_eq!(traces.len(), 1);
+
+        let t = &traces[0];
+        assert_eq!(t.directions.len(), 2);
+        assert_eq!(t.directions[0], Direction::Send);
+        assert_eq!(t.directions[1], Direction::Receive);
+    }
+
+    #[test]
+    fn test_try_parse_sorts_instances_by_instance_number() {
+        let tmp = temp_dir("test_try_parse_sorts_instances_by_instance_number");
+        let dir = tmp.as_path();
+
+        fs::write(dir.join("9-1"), "0.000001 1\n").unwrap();
+        fs::write(dir.join("9-0"), "0.000001 -1\n").unwrap();
+
+        let dataset = tiktok::try_parse(dir).unwrap();
+        let traces = dataset.data.get("9").unwrap();
+        assert_eq!(traces.len(), 2);
+
+        assert_eq!(traces[0].directions[0], Direction::Receive);
+        assert_eq!(traces[1].directions[0], Direction::Send);
+    }
+
+    #[test]
+    fn test_parse_line_rejects_empty_after_timestamp() {
+        assert!(parse_line("   1.23   ").is_none());
+        assert!(parse_line("1.23 \n").is_none());
+    }
+
+    #[test]
+    fn test_try_parse_skips_subdirectory_entries() {
+        let tmp = temp_dir("test_try_parse_skips_subdirectory_entries");
+        fs::write(tmp.join("2-0"), "0.000001 1\n").unwrap();
+
+        let sub = tmp.join("subdir");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("1-0"), "0.000001 1\n0.000002 -1\n").unwrap();
+
+        let dataset = tiktok::try_parse(&tmp).unwrap();
+
+        assert!(dataset.data.contains_key("2"));
+        assert!(!dataset.data.contains_key("1"));
+
+        let traces = &dataset.data["2"];
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].directions.len(), 1);
+        assert_eq!(traces[0].directions[0], Direction::Send);
+    }
+
+    #[test]
+    fn test_try_parse_invalid_instance_number_errors() {
+        let tmp = temp_dir("test_try_parse_invalid_instance_number_errors");
+
+        fs::write(tmp.join("1-notanumber"), "0.000001 1\n").unwrap();
+
+        let err = tiktok::try_parse(&tmp).unwrap_err();
+        match err {
+            ParseError::InvalidFileName { file, message } => {
+                assert!(file.ends_with("1-notanumber"));
+                assert!(message.contains("expected two unsigned integers"));
+            }
+            other => panic!("unexpected result: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_try_parse_magic_read_fails_treated_as_non_chaff() {
+        let tmp = temp_dir("test_try_parse_magic_read_fails_treated_as_non_chaff");
+
+        fs::write(tmp.join("1-0"), b"").unwrap();
+
+        let dataset = tiktok::try_parse(&tmp).unwrap();
+        let traces = dataset.data.get("1").unwrap();
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].directions.len(), 0);
+    }
+
+    #[test]
+    fn test_try_parse_skips_empty_lines() {
+        let tmp = temp_dir("test_try_parse_skips_empty_lines_in_trace_files");
+        fs::write(tmp.join("1-0"), "0.000001 1\n\n0.000002 -1\n").unwrap();
+
+        let dataset = tiktok::try_parse(&tmp).unwrap();
+        let trace = &dataset.data["1"][0];
+        assert_eq!(trace.directions.len(), 2);
+        assert_eq!(trace.directions[0], Direction::Send);
+        assert_eq!(trace.directions[1], Direction::Receive);
+    }
+
+    #[test]
+    fn test_try_parse_invalid_line_format() {
+        let tmp = temp_dir("test_try_parse_invalid_line_format_errors_with_line_number");
+        fs::write(tmp.join("1-0"), "0.000001 1\nthis_is_bad\n").unwrap();
+
+        let err = tiktok::try_parse(&tmp).unwrap_err();
+        match err {
+            ParseError::InvalidFormat {
+                file,
+                line,
+                message,
+            } => {
+                assert!(file.ends_with("1-0"));
+                assert_eq!(line, 2);
+                assert!(message.contains("invalid line format"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }
