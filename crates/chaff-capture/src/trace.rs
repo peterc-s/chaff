@@ -27,9 +27,10 @@ impl TryFrom<Event> for Direction {
         match value {
             Event::SendNormal | Event::SendDecoy => Ok(Self::Send),
             Event::ReceiveNormal | Event::ReceiveDecoy => Ok(Self::Receive),
-            Event::QueuePopped(_) | Event::QueueFull(_) | Event::StateBudgetExhausted => {
-                Err(CaptureError::CantConvert)
-            }
+            Event::QueuePopped(_)
+            | Event::QueueFull(_)
+            | Event::StateBudgetExhausted
+            | Event::QueueEmpty(_) => Err(CaptureError::CantConvert),
         }
     }
 }
