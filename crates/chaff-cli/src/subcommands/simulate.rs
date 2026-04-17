@@ -24,7 +24,7 @@ pub fn run_trace(input: &PathBuf, output: &Option<PathBuf>) -> Result<(), CliErr
     let out = sim.run();
 
     println!("{out}");
-    println!("{}", sim.framework.get_state());
+    println!("Final state: {}", sim.framework.get_state());
 
     if let Some(output) = output {
         out.serialise(output)?;

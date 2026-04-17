@@ -291,8 +291,14 @@ impl Trace {
 
 impl std::fmt::Display for Trace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut time = 0;
         for TracePacket(dir, delta, size) in self {
-            writeln!(f, "+{delta} {dir:?}: {size}")?;
+            time += delta;
+            let dir = match dir {
+                Direction::Send => "-->",
+                Direction::Receive => "<--",
+            };
+            writeln!(f, "@{time:<10}: {dir} {size:<6}")?;
         }
         Ok(())
     }
