@@ -11,7 +11,7 @@ use std::{collections::HashMap, fs, io::Read as _, path::Path};
 
 use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 
-use crate::{dataset::Dataset, errors::ParseError};
+use crate::{dataset::Dataset, errors::DatasetError};
 
 /// Parse a full line. This function makes a few assumptions about the dataset and does not
 /// handle errors very gracefully.
@@ -83,18 +83,18 @@ fn parse_line(line: &str) -> Option<(u64, i32)> {
 /// This function may also silently fail due to the parsing logic. The internal line parsing
 /// function has been made for performance. If you are giving the dataset as described
 /// [here](crate::parsers::tiktok), this should not be an issue.
-pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
+pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, DatasetError> {
     let path = path.as_ref();
 
     if !path.is_dir() {
-        return Err(ParseError::NotADirectory(path.to_path_buf()));
+        return Err(DatasetError::NotADirectory(path.to_path_buf()));
     }
 
     let mut data_with_instance: HashMap<String, Vec<(usize, Trace)>> = HashMap::default();
 
-    for entry in fs::read_dir(path).map_err(ParseError::Io)? {
-        let entry = entry.map_err(ParseError::Io)?;
-        let file_type = entry.file_type().map_err(ParseError::Io)?;
+    for entry in fs::read_dir(path).map_err(DatasetError::Io)? {
+        let entry = entry.map_err(DatasetError::Io)?;
+        let file_type = entry.file_type().map_err(DatasetError::Io)?;
 
         // don't follow symlinks or subdirectories
         if !file_type.is_file() {
@@ -112,13 +112,15 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
         }
 
         let class = parts[0].to_string();
-        let instance: usize = parts[1].parse().map_err(|_| ParseError::InvalidFileName {
-            file: entry.path(),
-            message: "expected two unsigned integers separated by hyphens".to_string(),
-        })?;
+        let instance: usize = parts[1]
+            .parse()
+            .map_err(|_| DatasetError::InvalidFileName {
+                file: entry.path(),
+                message: "expected two unsigned integers separated by hyphens".to_string(),
+            })?;
 
         let is_chaff = {
-            let mut f = fs::File::open(entry.path()).map_err(ParseError::Io)?;
+            let mut f = fs::File::open(entry.path()).map_err(DatasetError::Io)?;
             let mut magic = [0u8; 5];
             if f.read_exact(&mut magic).is_ok() {
                 magic == *chaff_capture::trace::TRACE_MAGIC
@@ -128,9 +130,9 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
         };
 
         let trace = if is_chaff {
-            Trace::deserialise(&entry.path()).map_err(ParseError::ChaffSerDe)?
+            Trace::deserialise(&entry.path()).map_err(DatasetError::ChaffSerDe)?
         } else {
-            let content = fs::read_to_string(entry.path()).map_err(ParseError::Io)?;
+            let content = fs::read_to_string(entry.path()).map_err(DatasetError::Io)?;
             let mut trace_builder = TraceBuilder::default();
 
             for (line_num, line) in content.lines().enumerate() {
@@ -139,7 +141,7 @@ pub fn try_parse<P: AsRef<Path>>(path: P) -> Result<Dataset, ParseError> {
                 }
 
                 let (timestamp_microsec, dir_size) =
-                    parse_line(line).ok_or_else(|| ParseError::InvalidFormat {
+                    parse_line(line).ok_or_else(|| DatasetError::InvalidFormat {
                         file: entry.path(),
                         line: line_num + 1,
                         message: format!("invalid line format: {line}"),
@@ -207,7 +209,7 @@ mod tests {
     use chaff_capture::trace::{Direction, TraceBuilder};
 
     use crate::{
-        errors::ParseError,
+        errors::DatasetError,
         parsers::tiktok::{self, TikTokDisplay, parse_line},
     };
 
@@ -330,7 +332,7 @@ mod tests {
         let err = tiktok::try_parse(&path).unwrap_err();
 
         match err {
-            ParseError::NotADirectory(p) => assert_eq!(p, path),
+            DatasetError::NotADirectory(p) => assert_eq!(p, path),
             other => panic!("unexpected result: {other}"),
         }
     }
@@ -407,7 +409,7 @@ mod tests {
 
         let err = tiktok::try_parse(&tmp).unwrap_err();
         match err {
-            ParseError::InvalidFileName { file, message } => {
+            DatasetError::InvalidFileName { file, message } => {
                 assert!(file.ends_with("1-notanumber"));
                 assert!(message.contains("expected two unsigned integers"));
             }
@@ -446,7 +448,7 @@ mod tests {
 
         let err = tiktok::try_parse(&tmp).unwrap_err();
         match err {
-            ParseError::InvalidFormat {
+            DatasetError::InvalidFormat {
                 file,
                 line,
                 message,

@@ -7,9 +7,9 @@ use std::{error::Error, fmt, io, path::PathBuf};
 
 use chaff_capture::errors::TraceError;
 
-/// Errors while parsing datasets.
+/// Errors while handling datasets.
 #[derive(Debug)]
-pub enum ParseError {
+pub enum DatasetError {
     /// An error from [`std::io`].
     Io(io::Error),
 
@@ -41,7 +41,7 @@ pub enum ParseError {
     ChaffSerDe(TraceError),
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for DatasetError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(err) => write!(f, "io error: {err}"),
@@ -65,7 +65,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-impl Error for ParseError {
+impl Error for DatasetError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(err) => Some(err),
@@ -74,5 +74,17 @@ impl Error for ParseError {
                 None
             }
         }
+    }
+}
+
+impl From<TraceError> for DatasetError {
+    fn from(value: TraceError) -> Self {
+        Self::ChaffSerDe(value)
+    }
+}
+
+impl From<io::Error> for DatasetError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
     }
 }
