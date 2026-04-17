@@ -43,6 +43,11 @@ impl Dataset {
 
     /// Dumps the dataset in Chaff trace format into a directory of separate trace files with naming
     /// `<class_name>-<instance_num>`. Will overwrite anything with the same name.
+    ///
+    /// # Errors
+    ///
+    /// Can fail if the given path is not a directory or if serialising an individual trace fails.
+    /// ([`Trace::serialise`]).
     pub fn dump_to(&self, path: &Path) -> Result<(), DatasetError> {
         if !path.is_dir() {
             return Err(DatasetError::NotADirectory(path.to_path_buf()));
@@ -68,6 +73,7 @@ pub struct DatasetBuilder<'a> {
 
 impl<'a> DatasetBuilder<'a> {
     /// Create a new [`DatasetBuilder`] with an empty dataset.
+    #[must_use]
     pub fn new(pad_to: usize) -> Self {
         Self {
             data: HashMap::new(),
@@ -93,6 +99,7 @@ impl<'a> DatasetBuilder<'a> {
     }
 
     /// Build the [`Dataset`].
+    #[must_use]
     pub fn build(self) -> Dataset {
         let data: HashMap<String, Box<[Trace]>> = self
             .data
