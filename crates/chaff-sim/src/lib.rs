@@ -224,6 +224,7 @@ mod tests {
     use std::{fs, path::PathBuf, rc::Rc};
 
     use chaff::{
+        machine,
         machine::Machine,
         state::{State, TransitionProbs},
     };
@@ -524,5 +525,38 @@ mod tests {
         assert_eq!(out.directions[1], Direction::Send);
 
         assert_eq!(out.timing_deltas[1], 999);
+    }
+
+    #[test]
+    fn test_simulator_replace_trace() {
+        let machine = machine! {
+            queues: [],
+            state dummy {
+                action: IntegratorAction::ReleaseBlock,
+            }
+        }
+        .unwrap();
+
+        let trace_0 = Trace {
+            directions: Box::new([Direction::Receive, Direction::Send]),
+            timing_deltas: Box::new([0, 10]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let trace_1 = Trace {
+            directions: Box::new([Direction::Send, Direction::Receive]),
+            timing_deltas: Box::new([10, 0]),
+            sizes: Box::new([20, 20]),
+        };
+
+        let mut sim = Simulator::with(
+            Framework::new(machine, rand::rng()),
+            trace_0.clone(),
+            rand::rng(),
+        );
+        assert_eq!(sim.trace, trace_0);
+
+        sim.replace_trace(trace_1.clone());
+        assert_eq!(sim.trace, trace_1);
     }
 }

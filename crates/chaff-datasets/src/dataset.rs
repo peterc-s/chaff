@@ -117,11 +117,27 @@ impl<'a> DatasetBuilder<'a> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, fs, path::PathBuf};
 
     use chaff_capture::trace::{Direction, Trace};
 
+    use crate::{dataset::DatasetBuilder, errors::DatasetError};
+
     use super::Dataset;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "chaff-tests-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     fn make_trace(dir: Direction) -> Trace {
         Trace {
@@ -167,5 +183,71 @@ mod tests {
 
         let missing = "><>".to_string();
         assert!(dataset.get_class(&missing).is_none());
+    }
+
+    #[test]
+    fn test_dump_to_errors_when_not_a_directory() {
+        let dir = temp_dir("test_dump_to_errors_when_not_a_directory");
+
+        let file_path = dir.as_path().join("not_a_dir");
+        fs::write(&file_path, b"hello").unwrap();
+        assert!(file_path.is_file());
+
+        let mut builder = DatasetBuilder::new(10);
+        builder.push_to_class("A", make_trace(Direction::Send));
+        let dataset = builder.build();
+
+        let err = dataset.dump_to(&file_path).unwrap_err();
+
+        match err {
+            DatasetError::NotADirectory(p) => assert_eq!(p, file_path),
+            other => panic!("unexpected result: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_dump_to_writes_expected_trace_files() {
+        let out_dir = temp_dir("test_dump_to_writes_expected_trace_files");
+
+        let mut builder = DatasetBuilder::new(10);
+        builder.push_to_class("A", make_trace(Direction::Send));
+        builder.push_to_class("A", make_trace(Direction::Receive));
+        builder.push_to_class("B", make_trace(Direction::Send));
+        let dataset = builder.build();
+
+        dataset.dump_to(&out_dir).unwrap();
+
+        assert!(out_dir.as_path().join("A-0").exists());
+        assert!(out_dir.as_path().join("A-1").exists());
+        assert!(out_dir.as_path().join("B-0").exists());
+    }
+
+    #[test]
+    fn test_dataset_builder_methods_and_build() {
+        let mut builder = DatasetBuilder::new(123);
+        assert_eq!(builder.pad_to, 123);
+        assert!(builder.data.is_empty());
+
+        builder.push_to_class("A", make_trace(Direction::Send));
+        builder.push_to_class("A", make_trace(Direction::Receive));
+        assert_eq!(builder.data.get("A").unwrap().len(), 2);
+
+        builder.extend_class(
+            "B",
+            vec![make_trace(Direction::Send), make_trace(Direction::Send)],
+        );
+        assert_eq!(builder.data.get("B").unwrap().len(), 2);
+
+        builder.set_pad_to(999);
+        assert_eq!(builder.pad_to, 999);
+
+        let dataset = builder.build();
+        assert_eq!(dataset.get_pad_to(), 999);
+
+        let a = "A".to_string();
+        assert_eq!(dataset.get_class(&a).unwrap().len(), 2);
+
+        let b = "B".to_string();
+        assert_eq!(dataset.get_class(&b).unwrap().len(), 2);
     }
 }
