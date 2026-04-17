@@ -1,8 +1,10 @@
 //! Stores the main dataset format used by Chaff.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use chaff_capture::trace::Trace;
+
+use crate::errors::DatasetError;
 
 /// The main dataset type for [`crate`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +39,71 @@ impl Dataset {
     #[must_use]
     pub fn get_class(&self, class: &String) -> Option<&[Trace]> {
         self.data.get(class).map(|v| &**v)
+    }
+
+    /// Dumps the dataset in Chaff trace format into a directory of separate trace files with naming
+    /// `<class_name>-<instance_num>`. Will overwrite anything with the same name.
+    pub fn dump_to(&self, path: &Path) -> Result<(), DatasetError> {
+        if !path.is_dir() {
+            return Err(DatasetError::NotADirectory(path.to_path_buf()));
+        }
+
+        for (class, traces) in &self.data {
+            for (instance, trace) in traces.iter().enumerate() {
+                let path = path.join(format!("{class}-{instance}"));
+                trace.serialise(&path)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// A builder struct for [`Dataset`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatasetBuilder<'a> {
+    pub(crate) data: HashMap<&'a str, Vec<Trace>>,
+    pub(crate) pad_to: usize,
+}
+
+impl<'a> DatasetBuilder<'a> {
+    /// Create a new [`DatasetBuilder`] with an empty dataset.
+    pub fn new(pad_to: usize) -> Self {
+        Self {
+            data: HashMap::new(),
+            pad_to,
+        }
+    }
+
+    /// Pushes the trace to the given class.
+    pub fn push_to_class(&mut self, class: &'a str, trace: Trace) {
+        let class = self.data.entry(class).or_default();
+        class.push(trace);
+    }
+
+    /// Extends the given class with the given [`Trace`] iterator.
+    pub fn extend_class<T: IntoIterator<Item = Trace>>(&mut self, class: &'a str, iter: T) {
+        let class = self.data.entry(class).or_default();
+        class.extend(iter);
+    }
+
+    /// Set the `pad_to` of the dataset builder.
+    pub fn set_pad_to(&mut self, pad_to: usize) {
+        self.pad_to = pad_to;
+    }
+
+    /// Build the [`Dataset`].
+    pub fn build(self) -> Dataset {
+        let data: HashMap<String, Box<[Trace]>> = self
+            .data
+            .into_iter()
+            .map(|(class, traces)| (class.to_string(), traces.into_boxed_slice()))
+            .collect();
+
+        Dataset {
+            data,
+            pad_to: self.pad_to,
+        }
     }
 }
 

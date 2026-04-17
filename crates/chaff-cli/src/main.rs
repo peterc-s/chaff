@@ -51,9 +51,9 @@ pub enum CliOptions {
     /// Simulate defences.
     #[bpaf(command("sim"))]
     Simulate {
-        /// Path to trace file to simulate a machine on.
-        #[bpaf(positional("INPUT"))]
-        input: PathBuf,
+        /// The simulator subcommand to take.
+        #[bpaf(external(sim))]
+        action: Sim,
     },
 
     /// Convert a pcap into a chaff trace.
@@ -89,6 +89,38 @@ pub enum CliOptions {
     },
 }
 
+/// Available simulation modes:
+#[derive(Debug, Clone, Bpaf)]
+pub enum Sim {
+    /// Simulate on a trace file.
+    #[bpaf(command("trace"))]
+    Trace {
+        /// Path to output trace file.
+        #[bpaf(short, long)]
+        output: Option<PathBuf>,
+
+        /// Path to input trace file.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
+    },
+
+    /// Simulate on a full dataset.
+    #[bpaf(command("dataset"))]
+    Dataset {
+        /// Path to output dataset directory.
+        #[bpaf(short, long)]
+        output: Option<PathBuf>,
+
+        /// The type of dataset (available: tiktok).
+        #[bpaf(positional("TYPE"))]
+        dataset_type: String,
+
+        /// Path to input dataset directory.
+        #[bpaf(positional("INPUT"))]
+        input: PathBuf,
+    },
+}
+
 /// Wrapper around [`run()`] with error printing.
 fn main() {
     if let Err(e) = run() {
@@ -106,7 +138,14 @@ fn run() -> Result<(), CliError> {
         CliOptions::Capture { output, ifname } => capture::run(output, ifname),
         CliOptions::TraceStats { input } => trace_stats::run(&input),
         CliOptions::DatasetStats { dataset_type, path } => dataset_stats::run(&dataset_type, &path),
-        CliOptions::Simulate { input } => simulate::run(&input),
+        CliOptions::Simulate { action } => match action {
+            Sim::Trace { output, input } => simulate::run_trace(&input, &output),
+            Sim::Dataset {
+                output,
+                input,
+                dataset_type,
+            } => simulate::run_dataset(&input, &dataset_type, &output),
+        },
         CliOptions::CapConvert { pcap, trace, mac } => cap_convert::run(mac, &pcap, &trace),
         CliOptions::DatasetConvert {
             dataset_type,

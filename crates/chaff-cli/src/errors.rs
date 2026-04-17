@@ -6,7 +6,7 @@
 use std::{error::Error, fmt, io};
 
 use chaff_capture::errors::{CaptureError, TraceError};
-use chaff_datasets::errors::ParseError;
+use chaff_datasets::errors::DatasetError;
 use mac_address::{MacAddressError, MacParseError};
 
 /// CLI errors
@@ -31,10 +31,16 @@ pub enum CliError {
     UnknownDatasetType(String),
 
     /// Error from a [`chaff_datasets`] parser.
-    Dataset(ParseError),
+    Dataset(DatasetError),
 
     /// An IO error in the top-level CLI.
     Io(io::Error),
+
+    /// Invalid option combination.
+    InvalidOptions(String),
+
+    /// Given dataset or class was empty, when it was expected to contain at least one trace.
+    EmptyDataset,
 }
 
 const RESET: &str = "\x1b[0m";
@@ -70,6 +76,13 @@ impl fmt::Display for CliError {
             }
             Self::Dataset(e) => write!(f, "dataset error: {e}"),
             Self::Io(e) => write!(f, "io error: {e}"),
+            Self::InvalidOptions(e) => write!(f, "invalid options: {e}"),
+            Self::EmptyDataset => {
+                write!(
+                    f,
+                    "dataset or class empty, expected to contain at least one trace"
+                )
+            }
         }
     }
 }
@@ -107,5 +120,11 @@ impl From<TraceError> for CliError {
 impl From<io::Error> for CliError {
     fn from(e: io::Error) -> Self {
         Self::Io(e)
+    }
+}
+
+impl From<DatasetError> for CliError {
+    fn from(e: DatasetError) -> Self {
+        Self::Dataset(e)
     }
 }

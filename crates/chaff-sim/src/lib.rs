@@ -153,6 +153,11 @@ impl<R: Rng> Simulator<R> {
         }
     }
 
+    /// Replace the trace the simulator will run on.
+    pub fn replace_trace(&mut self, trace: Trace) {
+        self.trace = trace;
+    }
+
     /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
     /// [`Trace`].
     pub fn run(&mut self) -> Trace {
