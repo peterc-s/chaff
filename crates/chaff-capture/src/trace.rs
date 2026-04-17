@@ -548,7 +548,7 @@ mod tests {
         };
 
         let output = format!("{trace}");
-        let expected = "+5 Send: 64\n+15 Receive: 1500\n";
+        let expected = "@5         : --> 64    \n@20        : <-- 1500  \n";
 
         assert_eq!(output, expected);
     }
