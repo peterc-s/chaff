@@ -862,4 +862,23 @@ mod tests {
         framework.process(&[], now);
         assert_eq!(framework.runtime.state, 3);
     }
+
+    #[test]
+    fn test_none_action() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                transitions: [Event::SendNormal => schedule_decoy],
+            },
+            state schedule_decoy {
+            }
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let actions = framework.process(&[Event::SendNormal], Instant::now());
+
+        assert!(actions.is_empty());
+        assert!(framework.runtime.queues[0].queue.is_empty());
+    }
 }
