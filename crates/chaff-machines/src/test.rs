@@ -4,7 +4,7 @@
 #![cfg(not(tarpaulin_include))]
 
 use chaff::{
-    action::{Action, IntegratorAction},
+    action::IntegratorAction,
     event::Event,
     machine::Machine,
     state::{State, TransitionProbs},
@@ -24,12 +24,8 @@ pub fn construct_test_machine() -> Machine {
 
     Machine::new(
         vec![
-            State::new(
-                Some(trans_probs),
-                Action::Integrator(IntegratorAction::SendDecoy),
-                None,
-            ),
-            State::new(None, Action::Integrator(IntegratorAction::SendDecoy), None),
+            State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
+            State::new(None, Some(IntegratorAction::SendDecoy), None),
         ],
         [None],
     )
