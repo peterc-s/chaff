@@ -56,7 +56,7 @@ impl Machine {
             .iter()
             .map(|state| state.action.clone())
             .filter_map(|action| match action {
-                Action::Framework(framework_action) => match framework_action {
+                Some(Action::Framework(framework_action)) => match framework_action {
                     FrameworkAction::Schedule { queue, .. }
                     | FrameworkAction::CancelQueue(queue)
                         if queue > queues =>
@@ -65,7 +65,7 @@ impl Machine {
                     }
                     _ => None,
                 },
-                Action::Integrator(_) => None,
+                Some(Action::Integrator(_)) | None => None,
             })
             .collect::<Vec<_>>();
 
@@ -111,7 +111,7 @@ impl Machine {
 /// ```rust
 /// use chaff::{
 ///     machine,
-///     action::IntegratorAction,
+///     action::{Action, IntegratorAction},
 ///     event::Event,
 ///     machine::Machine,
 ///     state::{State, TransitionProbs}
@@ -124,9 +124,15 @@ impl Machine {
 ///         action: IntegratorAction::SendDecoy,
 ///         budget: 25,
 ///         transitions: [
-///             Event::SendNormal => [(end, 0.5)],
-///             Event::ReceiveNormal => end
+///             Event::SendNormal => [(jump, 0.5)],
+///             Event::ReceiveNormal => jump
 ///         ],
+///     },
+///
+///     state jump {
+///         transitions: [
+///             Event::SendNormal => end,
+///         ]
 ///     },
 ///     
 ///     state end {
@@ -141,10 +147,17 @@ impl Machine {
 ///                 (Event::SendNormal, [(1, 0.5)]),
 ///                 (Event::ReceiveNormal, [(1, 1.0)])
 ///             ]).unwrap()),
-///             IntegratorAction::SendDecoy,
+///             Some(IntegratorAction::SendDecoy),
 ///             Some(25),
 ///         ),
-///         State::new(None, IntegratorAction::SendDecoy, None)
+///         State::new(
+///             Some(TransitionProbs::from_tuples([
+///                 (Event::SendNormal, [(2, 1.0)])
+///             ]).unwrap()),
+///             None::<Action>,
+///             None,
+///         ),
+///         State::new(None, Some(IntegratorAction::SendDecoy), None)
 ///     ],
 ///     [],
 /// ).unwrap();
@@ -187,34 +200,29 @@ macro_rules! machine {
 
     // state field parsing
     // parse `action:` - updates the status to found
-    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] action: $action:expr $(, $($rest:tt)*)? ) => {
-        $a = ::core::option::Option::Some($action);
-        $crate::machine!(@parse_state $a $t $b [found] $($($rest)*)?);
+    (@parse_state $a:ident $t:ident $b:ident action: $action:expr $(, $($rest:tt)*)? ) => {
+        $a = ::core::option::Option::Some($action.into());
+        $crate::machine!(@parse_state $a $t $b $($($rest)*)?);
     };
 
     // parse `transitions:`
-    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] $(, $($rest:tt)*)? ) => {
+    (@parse_state $a:ident $t:ident $b:ident transitions: [ $( $event:expr => $targets:tt ),* $(,)? ] $(, $($rest:tt)*)? ) => {
         $t = ::core::option::Option::Some(
             $crate::state::TransitionProbs::from_tuples([
                 $( ($event, $crate::machine!(@targets $targets)) ),*
             ])?
         );
-        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+        $crate::machine!(@parse_state $a $t $b $($($rest)*)?);
     };
 
     // parse `budget:`
-    (@parse_state $a:ident $t:ident $b:ident [$($status:tt)*] budget: $budget:expr $(, $($rest:tt)*)? ) => {
+    (@parse_state $a:ident $t:ident $b:ident budget: $budget:expr $(, $($rest:tt)*)? ) => {
         $b = ::core::option::Option::Some($budget);
-        $crate::machine!(@parse_state $a $t $b [$($status)*] $($($rest)*)?);
+        $crate::machine!(@parse_state $a $t $b $($($rest)*)?);
     };
 
-    // base case, `action:` found
-    (@parse_state $a:ident $t:ident $b:ident [found]) => {};
-
-    // base case, `action:` not found
-    (@parse_state $a:ident $t:ident $b:ident [missing]) => {
-        ::core::compile_error!("action is a required field for a state");
-    };
+    // base case
+    (@parse_state $a:ident $t:ident $b:ident) => {};
 
     (
         queues: $queues:expr,
@@ -241,16 +249,16 @@ macro_rules! machine {
 
             // build states
             $(
-                let mut _action = ::core::option::Option::None;
+                let mut _action: ::core::option::Option<$crate::action::Action> = ::core::option::Option::None;
                 let mut _probs = ::core::option::Option::None;
                 let mut _budget = ::core::option::Option::None;
 
                 // assign state properties, start with [missing] status as action not found
-                $crate::machine!(@parse_state _action _probs _budget [missing] $($body)*);
+                $crate::machine!(@parse_state _action _probs _budget $($body)*);
 
                 states.push($crate::state::State::new(
                     _probs,
-                    _action.expect("action is a required field for a state"),
+                    _action,
                     _budget,
                 ));
             )*
@@ -333,8 +341,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
-                State::new(None, IntegratorAction::SendDecoy, None),
+                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
+                State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
         )
@@ -371,8 +379,8 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), IntegratorAction::SendDecoy, None),
-                State::new(None, IntegratorAction::SendDecoy, None),
+                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
+                State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
         );
@@ -392,14 +400,18 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(1), None),
+                State::new(
+                    Some(trans_probs),
+                    Some(FrameworkAction::CancelQueue(1)),
+                    None,
+                ),
                 State::new(
                     None,
-                    FrameworkAction::Schedule {
+                    Some(FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 1,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    },
+                    }),
                     None,
                 ),
             ],
@@ -416,14 +428,18 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
+                State::new(
+                    Some(trans_probs),
+                    Some(FrameworkAction::CancelQueue(2)),
+                    None,
+                ),
                 State::new(
                     None,
-                    FrameworkAction::Schedule {
+                    Some(FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    },
+                    }),
                     None,
                 ),
             ],
@@ -450,14 +466,18 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), FrameworkAction::CancelQueue(2), None),
+                State::new(
+                    Some(trans_probs),
+                    Some(FrameworkAction::CancelQueue(2)),
+                    None,
+                ),
                 State::new(
                     None,
-                    FrameworkAction::Schedule {
+                    Some(FrameworkAction::Schedule {
                         action: IntegratorAction::SendDecoy,
                         queue: 3,
                         delay: Rc::new(Constant(Duration::from_secs(1))),
-                    },
+                    }),
                     None,
                 ),
             ],
