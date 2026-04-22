@@ -12,6 +12,10 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
@@ -343,11 +347,13 @@ impl MachineRuntime {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
-    use std::{rc::Rc, time::Duration};
-
     use crate::{
-        action::IntegratorAction, distr::Constant, event::Event, framework::Framework,
+        action::IntegratorAction,
+        distr::{Distr, DistrKind},
+        event::Event,
+        framework::Framework,
         state::TransitionProbs,
     };
 
@@ -421,6 +427,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -430,11 +438,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 1,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        1,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
@@ -449,6 +457,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -458,11 +468,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 3,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        3,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
@@ -487,6 +497,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -496,11 +508,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 3,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        3,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
@@ -532,6 +544,65 @@ mod tests {
             queues: [],
         };
 
-        assert!(matches!(err, Err(ValidationError::NoStates)))
+        assert!(matches!(err, Err(ValidationError::NoStates)));
+    }
+
+    #[test]
+    #[cfg(feature = "borsh")]
+    fn test_borsh_machine_round_trip() {
+        use std::io::{Read as _, Seek as _};
+
+        use borsh::{BorshDeserialize as _, BorshSerialize as _};
+        use tempfile::NamedTempFile;
+
+        let machine = machine! {
+            queues: [Some(4), None],
+
+            state init {
+                action: IntegratorAction::SendDecoy,
+                budget: 25,
+                transitions: [
+                    Event::SendNormal => [(jump, 0.5)],
+                    Event::ReceiveNormal => jump
+                ],
+            },
+
+            state jump {
+                transitions: [
+                    Event::SendNormal => end,
+                    Event::ReceiveNormal => other,
+                ]
+            },
+
+            state other {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Uniform {
+                        low: 0.1,
+                        high: 0.2
+                    }.try_into().unwrap()
+                ),
+                transitions: [
+                    Event::SendNormal => end,
+                ]
+            },
+
+            state end {
+                action: IntegratorAction::SendDecoy
+            }
+        }
+        .unwrap();
+
+        let mut file = NamedTempFile::new().unwrap();
+
+        machine.serialize(&mut file).expect("failed to serialize");
+        file.rewind().unwrap();
+
+        let mut bytes = vec![];
+        file.read_to_end(&mut bytes).expect("Failed to read");
+        let machine_de = Machine::deserialize(&mut bytes.as_slice()).unwrap();
+
+        assert_eq!(machine, machine_de);
     }
 }

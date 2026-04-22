@@ -7,6 +7,10 @@ use rand::RngExt;
 use crate::{action::Action, errors::ValidationError, event::Event};
 
 /// Represents a single state in a [`crate::machine::Machine`].
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct State {
     /// The probabilities of transitioning to other states in the machine.
@@ -38,6 +42,10 @@ impl State {
 
 /// Represents a stochastic transition from a state to another at [`Transition::index`] with
 /// probability [`Transition::prob`].
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transition {
     /// The index of the state to transition to.
@@ -63,6 +71,10 @@ impl TryFrom<(usize, f32)> for Transition {
 }
 
 /// Represents the transition probabilities for all events.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransitionProbs(pub HashMap<Event, Vec<Transition>>);
 

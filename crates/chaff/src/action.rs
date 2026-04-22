@@ -1,12 +1,14 @@
 //! Chaff actions for integrators ([`IntegratorAction`]) and the framework ([`FrameworkAction`]) to
 //! take.
 
-use std::rc::Rc;
-
-use crate::distr::{DynDurationDistr, IntoDurationDistr};
+use crate::distr::Distr;
 
 /// Actions the framework should take.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FrameworkAction {
     /// Schedule an [`IntegratorAction`] to expire after a delay on the given queue.
     Schedule {
@@ -17,7 +19,7 @@ pub enum FrameworkAction {
         queue: u8,
 
         /// The delay for scheduling.
-        delay: Rc<dyn DynDurationDistr>,
+        delay: Box<Distr>,
     },
 
     /// Cancel all actions on a given queue.
@@ -29,27 +31,27 @@ pub enum FrameworkAction {
 
 impl FrameworkAction {
     /// Create a new [`FrameworkAction::Schedule`] with given action, queue, and delay.
-    pub fn schedule(
-        action: impl Into<IntegratorAction>,
-        queue: u8,
-        delay: impl IntoDurationDistr,
-    ) -> Self {
+    pub fn schedule(action: impl Into<IntegratorAction>, queue: u8, delay: Distr) -> Self {
         Self::Schedule {
             action: action.into(),
             queue,
-            delay: delay.into_duration_distr(),
+            delay: Box::new(delay),
         }
     }
 }
 
 /// Actions an integrator should take.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IntegratorAction {
     /// Send a decoy packet.
     SendDecoy,
 
     /// Block outgoing packets for the given duration.
-    BlockOutgoing(Rc<dyn DynDurationDistr>),
+    BlockOutgoing(Distr),
 
     /// Release any existing block on outgoing packets.
     ReleaseBlock,
@@ -57,13 +59,18 @@ pub enum IntegratorAction {
 
 impl IntegratorAction {
     /// Ergonomic constructor for [`IntegratorAction::BlockOutgoing`].
-    pub fn block_outgoing(delay: impl IntoDurationDistr) -> Self {
-        Self::BlockOutgoing(delay.into_duration_distr())
+    #[must_use]
+    pub fn block_outgoing(delay: Distr) -> Self {
+        Self::BlockOutgoing(delay)
     }
 }
 
 /// An enum with each of the actions Chaff requires an integrator to make.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     /// An action for the framework to take, see [`FrameworkAction`].
     Framework(FrameworkAction),

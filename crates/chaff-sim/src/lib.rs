@@ -8,6 +8,7 @@ use std::{
 use chaff::{action::IntegratorAction, event::Event, framework::Framework};
 use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 use rand::Rng;
+use rand::distr::Distribution as _;
 
 /// A simulated event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -202,8 +203,7 @@ impl<R: Rng> Simulator<R> {
                     }
                     IntegratorAction::BlockOutgoing(duration) => {
                         #[expect(clippy::cast_possible_truncation)]
-                        let end_ts =
-                            sim_now + duration.sample_dyn(&mut self.rng).as_micros() as u64;
+                        let end_ts = sim_now + duration.sample(&mut self.rng).as_micros() as u64;
                         block_state.block(end_ts);
                     }
                     IntegratorAction::ReleaseBlock => {
@@ -219,16 +219,16 @@ impl<R: Rng> Simulator<R> {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
-#[expect(clippy::expect_used)]
 mod tests {
-    use std::{fs, path::PathBuf, rc::Rc};
+    use std::{fs, path::PathBuf};
 
     use chaff::{
+        distr::DistrKind,
         machine,
         machine::Machine,
         state::{State, TransitionProbs},
     };
-    use rand::{SeedableRng as _, distr::Uniform, rngs::SmallRng};
+    use rand::{SeedableRng as _, rngs::SmallRng};
 
     use super::*;
 
@@ -318,6 +318,8 @@ mod tests {
         let trans_1_to_2 =
             TransitionProbs::new([(Event::ReceiveNormal, [(2, 1.0).try_into().unwrap()])]).unwrap();
 
+        let long_delay = DistrKind::Constant(999.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -327,7 +329,7 @@ mod tests {
                 ),
                 State::new(
                     Some(trans_1_to_2),
-                    Some(IntegratorAction::block_outgoing(Duration::from_secs(999))),
+                    Some(IntegratorAction::block_outgoing(long_delay)),
                     None,
                 ),
                 State::new(None, Some(IntegratorAction::ReleaseBlock), None),
@@ -378,12 +380,14 @@ mod tests {
         let trans =
             TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let long_delay = Duration::from_micros(50).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
                 State::new(
                     None,
-                    Some(IntegratorAction::block_outgoing(Duration::from_micros(50))),
+                    Some(IntegratorAction::block_outgoing(long_delay)),
                     None,
                 ),
             ],
@@ -450,8 +454,12 @@ mod tests {
     /// [`rand::rng()`].
     #[test]
     fn test_with_uniform_distribution() {
-        let uniform = Uniform::new(Duration::from_micros(110), Duration::from_micros(160))
-            .expect("valid uniform range");
+        let uniform = DistrKind::Uniform {
+            low: Duration::from_micros(110).as_secs_f64(),
+            high: Duration::from_micros(160).as_secs_f64(),
+        }
+        .try_into()
+        .unwrap();
 
         let trans_0_to_1 =
             TransitionProbs::from_tuples([(Event::ReceiveNormal, [(1, 1.0)])]).unwrap();
@@ -463,11 +471,7 @@ mod tests {
                     Some(IntegratorAction::ReleaseBlock),
                     None,
                 ),
-                State::new(
-                    None,
-                    Some(IntegratorAction::BlockOutgoing(Rc::new(uniform))),
-                    None,
-                ),
+                State::new(None, Some(IntegratorAction::BlockOutgoing(uniform)), None),
             ],
             [],
         )
@@ -518,12 +522,14 @@ mod tests {
         let trans =
             TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let long_delay = Duration::from_micros(999).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
                 State::new(
                     None,
-                    Some(IntegratorAction::block_outgoing(Duration::from_micros(999))),
+                    Some(IntegratorAction::block_outgoing(long_delay)),
                     None,
                 ),
             ],

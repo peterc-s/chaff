@@ -4,13 +4,16 @@
 // Not currently tested.
 #![cfg(not(tarpaulin_include))]
 
-use std::path::PathBuf;
+use borsh::BorshDeserialize as _;
+use std::{fs::File, path::PathBuf};
 
 use bpaf::Bpaf;
+use chaff::machine::Machine;
 use chaff_cli::{
     errors::CliError,
     subcommands::{cap_convert, capture, dataset_convert, dataset_stats, simulate, trace_stats},
 };
+use chaff_machines::test::construct_test_machine;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -51,6 +54,10 @@ pub enum CliOptions {
     /// Simulate defences.
     #[bpaf(command("sim"))]
     Simulate {
+        /// A path to the serialised machine to use.
+        #[bpaf(short, long)]
+        machine: Option<PathBuf>,
+
         /// The simulator subcommand to take.
         #[bpaf(external(sim))]
         action: Sim,
@@ -138,14 +145,23 @@ fn run() -> Result<(), CliError> {
         CliOptions::Capture { output, ifname } => capture::run(output, ifname),
         CliOptions::TraceStats { input } => trace_stats::run(&input),
         CliOptions::DatasetStats { dataset_type, path } => dataset_stats::run(&dataset_type, &path),
-        CliOptions::Simulate { action } => match action {
-            Sim::Trace { output, input } => simulate::run_trace(&input, &output),
-            Sim::Dataset {
-                output,
-                input,
-                dataset_type,
-            } => simulate::run_dataset(&input, &dataset_type, &output),
-        },
+        CliOptions::Simulate { action, machine } => {
+            let machine = if let Some(path) = machine {
+                let mut file = File::open(path)?;
+                Machine::deserialize_reader(&mut file)?
+            } else {
+                construct_test_machine()
+            };
+
+            match action {
+                Sim::Trace { output, input } => simulate::run_trace(&input, &output, machine),
+                Sim::Dataset {
+                    output,
+                    input,
+                    dataset_type,
+                } => simulate::run_dataset(&input, &dataset_type, &output, machine),
+            }
+        }
         CliOptions::CapConvert { pcap, trace, mac } => cap_convert::run(mac, &pcap, &trace),
         CliOptions::DatasetConvert {
             dataset_type,

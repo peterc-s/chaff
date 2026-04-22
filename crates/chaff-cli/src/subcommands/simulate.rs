@@ -2,10 +2,9 @@
 
 use std::{fs, path::PathBuf};
 
-use chaff::framework::Framework;
+use chaff::{framework::Framework, machine::Machine};
 use chaff_capture::trace::Trace;
 use chaff_datasets::dataset::DatasetBuilder;
-use chaff_machines::test::construct_test_machine;
 use chaff_sim::Simulator;
 
 use crate::{errors::CliError, utils::parse_dataset};
@@ -16,9 +15,12 @@ use crate::{errors::CliError, utils::parse_dataset};
 ///
 /// If deserialising the given trace file fails. If output is supplied, an error may be returned if
 /// serialising fails.
-pub fn run_trace(input: &PathBuf, output: &Option<PathBuf>) -> Result<(), CliError> {
+pub fn run_trace(
+    input: &PathBuf,
+    output: &Option<PathBuf>,
+    machine: Machine,
+) -> Result<(), CliError> {
     let trace = Trace::deserialise(input)?;
-    let machine = construct_test_machine();
     let framework = Framework::new(machine, rand::rng());
     let mut sim: Simulator<_> = Simulator::with(framework, trace, rand::rng());
     let out = sim.run();
@@ -42,13 +44,13 @@ pub fn run_dataset(
     input: &PathBuf,
     dataset_type: &str,
     output: &Option<PathBuf>,
+    machine: Machine,
 ) -> Result<(), CliError> {
     let input_dataset = parse_dataset(dataset_type, input)?;
     let input_data = input_dataset.get_dataset();
 
     let mut output_dataset_builder = DatasetBuilder::new(input_dataset.get_pad_to());
 
-    let machine = construct_test_machine();
     let framework = Framework::new(machine, rand::rng());
     let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 

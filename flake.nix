@@ -76,6 +76,8 @@
           cargo-outdated
           cargo-tarpaulin
         ];
+
+        allFeatures = x: x ++ ["--all-features"];
       in {
         formatter = treefmtConfig.config.build.wrapper;
 
@@ -83,6 +85,7 @@
         packages.default = naersk'.buildPackage {
           inherit buildInputs src;
           doDoc = true;
+          cargoBuildOptions = allFeatures;
         };
 
         devShells = {
@@ -118,16 +121,25 @@
           msrv = naerskMsrv.buildPackage {
             inherit buildInputs src;
             mode = "check";
+            cargoBuildOptions = allFeatures;
+          };
+
+          # Do a check with default features
+          default-features = naersk'.buildPackage {
+            inherit buildInputs src;
+            mode = "check";
           };
 
           # Lint and test
           clippy = naersk'.buildPackage {
             inherit buildInputs src;
             mode = "clippy";
+            cargoBuildOptions = allFeatures;
           };
           test = naersk'.buildPackage {
             inherit buildInputs src;
             mode = "test";
+            cargoTestOptions = allFeatures;
           };
         };
       }

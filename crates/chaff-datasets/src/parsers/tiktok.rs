@@ -207,25 +207,12 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use chaff_capture::trace::{Direction, TraceBuilder};
+    use tempfile::tempdir;
 
     use crate::{
         errors::DatasetError,
         parsers::tiktok::{self, TikTokDisplay, parse_line},
     };
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "chaff-tests-{}-{}",
-            name,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     #[test]
     fn test_chaff_vs_original() {
@@ -339,8 +326,8 @@ mod tests {
 
     #[test]
     fn test_try_parse_skips_invalid_filenames() {
-        let tmp = temp_dir("test_try_parse_skips_invalid_filenames");
-        let dir = tmp.as_path();
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
 
         fs::write(dir.join("badname"), "0.000001 1\n").unwrap();
         fs::write(dir.join("1-0"), "0.000001 1\n0.000002 -1\n").unwrap();
@@ -361,8 +348,8 @@ mod tests {
 
     #[test]
     fn test_try_parse_sorts_instances_by_instance_number() {
-        let tmp = temp_dir("test_try_parse_sorts_instances_by_instance_number");
-        let dir = tmp.as_path();
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
 
         fs::write(dir.join("9-1"), "0.000001 1\n").unwrap();
         fs::write(dir.join("9-0"), "0.000001 -1\n").unwrap();
@@ -383,10 +370,11 @@ mod tests {
 
     #[test]
     fn test_try_parse_skips_subdirectory_entries() {
-        let tmp = temp_dir("test_try_parse_skips_subdirectory_entries");
-        fs::write(tmp.join("2-0"), "0.000001 1\n").unwrap();
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("2-0"), "0.000001 1\n").unwrap();
 
-        let sub = tmp.join("subdir");
+        let sub = dir.join("subdir");
         fs::create_dir_all(&sub).unwrap();
         fs::write(sub.join("1-0"), "0.000001 1\n0.000002 -1\n").unwrap();
 
@@ -403,9 +391,10 @@ mod tests {
 
     #[test]
     fn test_try_parse_invalid_instance_number_errors() {
-        let tmp = temp_dir("test_try_parse_invalid_instance_number_errors");
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
 
-        fs::write(tmp.join("1-notanumber"), "0.000001 1\n").unwrap();
+        fs::write(dir.join("1-notanumber"), "0.000001 1\n").unwrap();
 
         let err = tiktok::try_parse(&tmp).unwrap_err();
         match err {
@@ -419,9 +408,10 @@ mod tests {
 
     #[test]
     fn test_try_parse_magic_read_fails_treated_as_non_chaff() {
-        let tmp = temp_dir("test_try_parse_magic_read_fails_treated_as_non_chaff");
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
 
-        fs::write(tmp.join("1-0"), b"").unwrap();
+        fs::write(dir.join("1-0"), b"").unwrap();
 
         let dataset = tiktok::try_parse(&tmp).unwrap();
         let traces = dataset.data.get("1").unwrap();
@@ -431,8 +421,10 @@ mod tests {
 
     #[test]
     fn test_try_parse_skips_empty_lines() {
-        let tmp = temp_dir("test_try_parse_skips_empty_lines_in_trace_files");
-        fs::write(tmp.join("1-0"), "0.000001 1\n\n0.000002 -1\n").unwrap();
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
+
+        fs::write(dir.join("1-0"), "0.000001 1\n\n0.000002 -1\n").unwrap();
 
         let dataset = tiktok::try_parse(&tmp).unwrap();
         let trace = &dataset.data["1"][0];
@@ -443,8 +435,10 @@ mod tests {
 
     #[test]
     fn test_try_parse_invalid_line_format() {
-        let tmp = temp_dir("test_try_parse_invalid_line_format_errors_with_line_number");
-        fs::write(tmp.join("1-0"), "0.000001 1\nthis_is_bad\n").unwrap();
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
+
+        fs::write(dir.join("1-0"), "0.000001 1\nthis_is_bad\n").unwrap();
 
         let err = tiktok::try_parse(&tmp).unwrap_err();
         match err {
