@@ -4,6 +4,10 @@
 use crate::distr::Distr;
 
 /// Actions the framework should take.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum FrameworkAction {
     /// Schedule an [`IntegratorAction`] to expire after a delay on the given queue.
@@ -37,6 +41,10 @@ impl FrameworkAction {
 }
 
 /// Actions an integrator should take.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum IntegratorAction {
     /// Send a decoy packet.
@@ -57,6 +65,10 @@ impl IntegratorAction {
 }
 
 /// An enum with each of the actions Chaff requires an integrator to make.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     /// An action for the framework to take, see [`FrameworkAction`].

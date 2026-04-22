@@ -12,6 +12,10 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
@@ -539,6 +543,65 @@ mod tests {
             queues: [],
         };
 
-        assert!(matches!(err, Err(ValidationError::NoStates)))
+        assert!(matches!(err, Err(ValidationError::NoStates)));
+    }
+
+    #[test]
+    #[cfg(feature = "borsh")]
+    fn test_borsh_machine_round_trip() {
+        use std::io::{Read as _, Seek as _};
+
+        use borsh::{BorshDeserialize as _, BorshSerialize as _};
+        use tempfile::NamedTempFile;
+
+        let machine = machine! {
+            queues: [Some(4), None],
+
+            state init {
+                action: IntegratorAction::SendDecoy,
+                budget: 25,
+                transitions: [
+                    Event::SendNormal => [(jump, 0.5)],
+                    Event::ReceiveNormal => jump
+                ],
+            },
+
+            state jump {
+                transitions: [
+                    Event::SendNormal => end,
+                    Event::ReceiveNormal => other,
+                ]
+            },
+
+            state other {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Uniform {
+                        low: 0.1,
+                        high: 0.2
+                    }.try_into().unwrap()
+                ),
+                transitions: [
+                    Event::SendNormal => end,
+                ]
+            },
+
+            state end {
+                action: IntegratorAction::SendDecoy
+            }
+        }
+        .unwrap();
+
+        let mut file = NamedTempFile::new().unwrap();
+
+        machine.serialize(&mut file).expect("failed to serialize");
+        file.rewind().unwrap();
+
+        let mut bytes = vec![];
+        file.read_to_end(&mut bytes).expect("Failed to read");
+        let machine_de = Machine::deserialize(&mut bytes.as_slice()).unwrap();
+
+        assert_eq!(machine, machine_de);
     }
 }

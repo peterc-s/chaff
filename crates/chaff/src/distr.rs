@@ -17,6 +17,10 @@ type Float = f64;
 
 /// Kinds of supported distributions. See the associated [`rand_distr`] documentation for
 /// parameters.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[expect(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DistrKind {
@@ -184,6 +188,8 @@ impl TryFrom<DistrKind> for ActiveDistr {
 /// An instance of a distribution.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Distr {
+    kind: DistrKind,
+
     /// The actual instance of the [`rand_distr`] distribution used for sampling.
     pub distr: ActiveDistr,
 
@@ -197,6 +203,38 @@ pub struct Distr {
     pub max: Option<Float>,
 }
 
+#[cfg(feature = "borsh")]
+impl borsh::BorshSerialize for Distr {
+    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.kind.serialize(writer)?;
+        self.offset.serialize(writer)?;
+        self.min.serialize(writer)?;
+        self.max.serialize(writer)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl borsh::BorshDeserialize for Distr {
+    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let kind = DistrKind::deserialize_reader(reader)?;
+        let offset = Float::deserialize_reader(reader)?;
+        let min = Option::<Float>::deserialize_reader(reader)?;
+        let max = Option::<Float>::deserialize_reader(reader)?;
+
+        let active = ActiveDistr::try_from(kind)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+        Ok(Self {
+            kind,
+            distr: active,
+            offset,
+            min,
+            max,
+        })
+    }
+}
+
 impl Distr {
     /// Try to create a new [`Distr`]. Fails if creating the underlying [`rand_distr`]
     /// [`rand_distr::Distribution`] fails.
@@ -208,6 +246,7 @@ impl Distr {
     ) -> Result<Self, ValidationError> {
         let distr = ActiveDistr::try_from(kind)?;
         Ok(Self {
+            kind,
             distr,
             offset,
             min,

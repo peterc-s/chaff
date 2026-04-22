@@ -349,13 +349,10 @@ impl<'a> IntoIterator for &'a Trace {
 #[expect(clippy::unwrap_used)]
 #[expect(clippy::expect_used)]
 mod tests {
+    use tempfile::NamedTempFile;
+
     use super::*;
     use std::fs;
-    use std::path::PathBuf;
-
-    fn temp_file(name: &str) -> PathBuf {
-        std::env::temp_dir().join(name)
-    }
 
     #[test]
     fn test_serialise_trace() {
@@ -367,7 +364,7 @@ mod tests {
         };
 
         // save to a temporary file
-        let path = temp_file("test_serialise_trace.bin");
+        let path = NamedTempFile::new().unwrap();
         trace.serialise(&path).unwrap();
 
         // read file back
@@ -412,7 +409,7 @@ mod tests {
             sizes: Box::new([100, 200]),
         };
 
-        let path = temp_file("test_serialise_length_mismatch.bin");
+        let path = NamedTempFile::new().unwrap();
 
         let result = trace.serialise(&path);
 
@@ -435,7 +432,7 @@ mod tests {
         bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
         bytes.extend_from_slice(&0u32.to_le_bytes()); // size
 
-        let file = temp_file("test_deserialise_invalid_magic.bin");
+        let file = NamedTempFile::new().unwrap();
         fs::write(&file, bytes).unwrap();
 
         let result = Trace::deserialise(&file);
@@ -462,7 +459,7 @@ mod tests {
         bytes.extend_from_slice(&0u32.to_le_bytes()); // timing delta
         bytes.extend_from_slice(&0u32.to_le_bytes()); // size
 
-        let file = temp_file("test_deserialise_invalid_version.bin");
+        let file = NamedTempFile::new().unwrap();
         fs::write(&file, bytes).unwrap();
 
         let result = Trace::deserialise(&file);
@@ -486,7 +483,7 @@ mod tests {
         };
 
         // save to a temporary file
-        let path = temp_file("test_serde_round_trip.bin");
+        let path = NamedTempFile::new().unwrap();
         trace.serialise(&path).unwrap();
 
         // check trace is the same
@@ -523,12 +520,12 @@ mod tests {
 
         let mut iter = trace.iter();
 
-        let p1 = iter.next().expect("Should have first packet");
+        let p1 = iter.next().expect("should have first packet");
         assert!(matches!(p1.0, Direction::Send));
         assert_eq!(p1.1, 10);
         assert_eq!(p1.2, 100);
 
-        let p2 = iter.next().expect("Should have second packet");
+        let p2 = iter.next().expect("should have second packet");
         assert!(matches!(p2.0, Direction::Receive));
         assert_eq!(p2.1, 20);
         assert_eq!(p2.2, 200);

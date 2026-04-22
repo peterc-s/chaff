@@ -4,6 +4,10 @@
 #![cfg(not(tarpaulin_include))]
 
 /// An event that can be emitted either by the integrator or by the framework.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Event {
     /// Normal packet sent (egress). Emitted by integrator.

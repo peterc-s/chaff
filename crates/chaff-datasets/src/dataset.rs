@@ -117,27 +117,14 @@ impl<'a> DatasetBuilder<'a> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{collections::HashMap, fs, path::PathBuf};
+    use std::{collections::HashMap, fs};
 
     use chaff_capture::trace::{Direction, Trace};
+    use tempfile::tempdir;
 
     use crate::{dataset::DatasetBuilder, errors::DatasetError};
 
     use super::Dataset;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "chaff-tests-{}-{}",
-            name,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn make_trace(dir: Direction) -> Trace {
         Trace {
@@ -187,9 +174,9 @@ mod tests {
 
     #[test]
     fn test_dump_to_errors_when_not_a_directory() {
-        let dir = temp_dir("test_dump_to_errors_when_not_a_directory");
+        let dir = tempdir().unwrap();
 
-        let file_path = dir.as_path().join("not_a_dir");
+        let file_path = dir.path().join("not_a_dir");
         fs::write(&file_path, b"hello").unwrap();
         assert!(file_path.is_file());
 
@@ -207,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_dump_to_writes_expected_trace_files() {
-        let out_dir = temp_dir("test_dump_to_writes_expected_trace_files");
+        let out_dir = tempdir().unwrap();
 
         let mut builder = DatasetBuilder::new(10);
         builder.push_to_class("A", make_trace(Direction::Send));
@@ -215,11 +202,11 @@ mod tests {
         builder.push_to_class("B", make_trace(Direction::Send));
         let dataset = builder.build();
 
-        dataset.dump_to(&out_dir).unwrap();
+        dataset.dump_to(out_dir.path()).unwrap();
 
-        assert!(out_dir.as_path().join("A-0").exists());
-        assert!(out_dir.as_path().join("A-1").exists());
-        assert!(out_dir.as_path().join("B-0").exists());
+        assert!(out_dir.path().join("A-0").exists());
+        assert!(out_dir.path().join("A-1").exists());
+        assert!(out_dir.path().join("B-0").exists());
     }
 
     #[test]
