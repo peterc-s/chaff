@@ -117,6 +117,11 @@ impl TryFrom<DistrKind> for ActiveDistr {
                 make_distr!(Uniform(low, high))
             }
             DistrKind::Normal { mean, std_dev } => {
+                if std_dev < 0.0 {
+                    return Err(ValidationError::InvalidDistr(
+                        "standard deviation for normal distribution must be non-negative".into(),
+                    ));
+                }
                 make_distr!(Normal(mean, std_dev))
             }
             DistrKind::SkewNormal {
@@ -133,6 +138,11 @@ impl TryFrom<DistrKind> for ActiveDistr {
                 make_distr!(Binomial(n, p))
             }
             DistrKind::Geometric { p } => {
+                if p <= 0.0 || p > 1.0 {
+                    return Err(ValidationError::InvalidDistr(
+                        "geometric parameter p must be in the range (0, 1]".into(),
+                    ));
+                }
                 make_distr!(Geometric(p))
             }
             DistrKind::Hypergeometric {
@@ -238,30 +248,33 @@ fn maybe_clamp(val: f64, min: Option<f64>, max: Option<f64>) -> f64 {
 
 impl Distribution<Duration> for Distr {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Duration {
-        Duration::from_secs_f64(maybe_clamp(
-            self.offset
-                + match self.distr {
-                    ActiveDistr::Constant(val) => val,
-                    ActiveDistr::Uniform(uniform) => uniform.sample(rng),
-                    ActiveDistr::Normal(normal) => normal.sample(rng),
-                    ActiveDistr::SkewNormal(skew_normal) => skew_normal.sample(rng),
-                    ActiveDistr::Cauchy(cauchy) => cauchy.sample(rng),
-                    ActiveDistr::Binomial(binomial) => binomial.sample(rng) as f64,
-                    ActiveDistr::Geometric(geometric) => geometric.sample(rng) as f64,
-                    ActiveDistr::Hypergeometric(hypergeometric) => {
-                        hypergeometric.sample(rng) as f64
-                    }
-                    ActiveDistr::LogNormal(log_normal) => log_normal.sample(rng),
-                    ActiveDistr::Pareto(pareto) => pareto.sample(rng),
-                    ActiveDistr::Poisson(poisson) => poisson.sample(rng),
-                    ActiveDistr::Exp(exp) => exp.sample(rng),
-                    ActiveDistr::Weibull(weibull) => weibull.sample(rng),
-                    ActiveDistr::Gamma(gamma) => gamma.sample(rng),
-                    ActiveDistr::Beta(beta) => beta.sample(rng),
-                },
-            self.min,
-            self.max,
-        ))
+        Duration::from_secs_f64(
+            maybe_clamp(
+                self.offset
+                    + match self.distr {
+                        ActiveDistr::Constant(val) => val,
+                        ActiveDistr::Uniform(uniform) => uniform.sample(rng),
+                        ActiveDistr::Normal(normal) => normal.sample(rng),
+                        ActiveDistr::SkewNormal(skew_normal) => skew_normal.sample(rng),
+                        ActiveDistr::Cauchy(cauchy) => cauchy.sample(rng),
+                        ActiveDistr::Binomial(binomial) => binomial.sample(rng) as f64,
+                        ActiveDistr::Geometric(geometric) => geometric.sample(rng) as f64,
+                        ActiveDistr::Hypergeometric(hypergeometric) => {
+                            hypergeometric.sample(rng) as f64
+                        }
+                        ActiveDistr::LogNormal(log_normal) => log_normal.sample(rng),
+                        ActiveDistr::Pareto(pareto) => pareto.sample(rng),
+                        ActiveDistr::Poisson(poisson) => poisson.sample(rng),
+                        ActiveDistr::Exp(exp) => exp.sample(rng),
+                        ActiveDistr::Weibull(weibull) => weibull.sample(rng),
+                        ActiveDistr::Gamma(gamma) => gamma.sample(rng),
+                        ActiveDistr::Beta(beta) => beta.sample(rng),
+                    },
+                self.min,
+                self.max,
+            )
+            .max(0.0),
+        )
     }
 }
 
@@ -278,5 +291,246 @@ impl TryFrom<Duration> for Distr {
 
     fn try_from(value: Duration) -> Result<Self, Self::Error> {
         Self::try_new(DistrKind::Constant(value.as_secs_f64()), 0.0, None, None)
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn sample(kind: DistrKind) -> f64 {
+        let distr = Distr::try_from(kind).unwrap();
+        let dur = distr.sample(&mut rand::rng());
+        dur.as_secs_f64()
+    }
+
+    #[test]
+    fn test_all_distr_kinds_construct() {
+        let kinds = [
+            DistrKind::Constant(1.5),
+            DistrKind::Uniform {
+                low: 0.0,
+                high: 1.0,
+            },
+            DistrKind::Normal {
+                mean: 0.0,
+                std_dev: 1.0,
+            },
+            DistrKind::SkewNormal {
+                location: 0.0,
+                scale: 1.0,
+                shape: 2.0,
+            },
+            DistrKind::Cauchy {
+                median: 0.0,
+                scale: 1.0,
+            },
+            DistrKind::Binomial { n: 10, p: 0.5 },
+            DistrKind::Geometric { p: 0.5 },
+            DistrKind::Hypergeometric {
+                total_population_size: 100,
+                population_with_feature: 50,
+                sample_size: 10,
+            },
+            DistrKind::LogNormal {
+                mu: 0.0,
+                sigma: 1.0,
+            },
+            DistrKind::Pareto {
+                scale: 1.0,
+                shape: 2.0,
+            },
+            DistrKind::Poisson { lambda: 3.0 },
+            DistrKind::Exp { lambda: 1.0 },
+            DistrKind::Weibull {
+                scale: 1.0,
+                shape: 1.5,
+            },
+            DistrKind::Gamma {
+                shape: 2.0,
+                scale: 1.0,
+            },
+            DistrKind::Beta {
+                alpha: 2.0,
+                beta: 5.0,
+            },
+        ];
+        for kind in kinds {
+            assert!(
+                Distr::try_from(kind).is_ok(),
+                "failed to construct {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_distr_returns_err() {
+        assert!(
+            Distr::try_from(DistrKind::Normal {
+                mean: 0.0,
+                std_dev: -1.0
+            })
+            .is_err()
+        );
+        assert!(Distr::try_from(DistrKind::Geometric { p: 0.0 }).is_err());
+        assert!(Distr::try_from(DistrKind::Poisson { lambda: -1.0 }).is_err());
+    }
+
+    #[test]
+    fn test_constant_samples_exact_value() {
+        assert_eq!(sample(DistrKind::Constant(2.5)), 2.5);
+    }
+
+    #[test]
+    fn test_try_from_duration() {
+        let dur = Duration::from_secs_f64(3.0);
+        let distr = Distr::try_from(dur).unwrap();
+        assert_eq!(distr.sample(&mut rand::rng()), dur);
+    }
+
+    #[test]
+    fn test_with_offset() {
+        let distr = Distr::try_from(DistrKind::Constant(1.0))
+            .unwrap()
+            .with_offset(2.0);
+
+        assert_eq!(distr.offset, 2.0);
+        assert_eq!(distr.sample(&mut rand::rng()), Duration::from_secs_f64(3.0));
+    }
+
+    #[test]
+    fn test_with_min() {
+        let distr = Distr::try_from(DistrKind::Constant(0.5))
+            .unwrap()
+            .with_min(Some(1.0));
+
+        assert_eq!(distr.sample(&mut rand::rng()), Duration::from_secs_f64(1.0));
+    }
+
+    #[test]
+    fn test_with_max() {
+        let distr = Distr::try_from(DistrKind::Constant(10.0))
+            .unwrap()
+            .with_max(Some(3.0));
+
+        assert_eq!(distr.sample(&mut rand::rng()), Duration::from_secs_f64(3.0));
+    }
+
+    #[test]
+    fn test_with_min_and_max() {
+        let distr = Distr::try_from(DistrKind::Constant(5.0))
+            .unwrap()
+            .with_min(Some(1.0))
+            .with_max(Some(10.0));
+
+        assert_eq!(distr.sample(&mut rand::rng()), Duration::from_secs_f64(5.0));
+
+        let distr_low = Distr::try_from(DistrKind::Constant(0.0))
+            .unwrap()
+            .with_min(Some(1.0))
+            .with_max(Some(10.0));
+
+        assert_eq!(
+            distr_low.sample(&mut rand::rng()),
+            Duration::from_secs_f64(1.0)
+        );
+
+        let distr_high = Distr::try_from(DistrKind::Constant(20.0))
+            .unwrap()
+            .with_min(Some(1.0))
+            .with_max(Some(10.0));
+
+        assert_eq!(
+            distr_high.sample(&mut rand::rng()),
+            Duration::from_secs_f64(10.0)
+        );
+    }
+
+    #[test]
+    fn test_with_min_none_clears_min() {
+        let distr = Distr::try_from(DistrKind::Constant(0.5))
+            .unwrap()
+            .with_min(Some(1.0))
+            .with_min(None);
+
+        assert_eq!(distr.sample(&mut rand::rng()), Duration::from_secs_f64(0.5));
+    }
+
+    // sanity checking and potentially flaky, but flaky errors should not be ignored.
+
+    #[test]
+    fn test_continuous_distrs_sample_finite() {
+        let kinds = [
+            DistrKind::Uniform {
+                low: 0.0,
+                high: 1.0,
+            },
+            DistrKind::Normal {
+                mean: 0.0,
+                std_dev: 1.0,
+            },
+            DistrKind::SkewNormal {
+                location: 0.0,
+                scale: 1.0,
+                shape: 1.0,
+            },
+            DistrKind::Cauchy {
+                median: 0.0,
+                scale: 1.0,
+            },
+            DistrKind::LogNormal {
+                mu: 0.0,
+                sigma: 0.5,
+            },
+            DistrKind::Pareto {
+                scale: 1.0,
+                shape: 2.0,
+            },
+            DistrKind::Exp { lambda: 1.0 },
+            DistrKind::Weibull {
+                scale: 1.0,
+                shape: 1.5,
+            },
+            DistrKind::Gamma {
+                shape: 2.0,
+                scale: 1.0,
+            },
+            DistrKind::Beta {
+                alpha: 2.0,
+                beta: 2.0,
+            },
+        ];
+        let mut rng = rand::rng();
+        for kind in kinds {
+            let distr = Distr::try_from(kind).unwrap();
+            for _ in 0..10 {
+                let v = distr.sample(&mut rng).as_secs_f64();
+                assert!(v.is_finite(), "{kind:?} produced non-finite sample {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_discrete_distrs_sample_non_negative() {
+        let kinds = [
+            DistrKind::Binomial { n: 20, p: 0.5 },
+            DistrKind::Geometric { p: 0.3 },
+            DistrKind::Hypergeometric {
+                total_population_size: 50,
+                population_with_feature: 20,
+                sample_size: 5,
+            },
+            DistrKind::Poisson { lambda: 4.0 },
+        ];
+        let mut rng = rand::rng();
+        for kind in kinds {
+            let distr = Distr::try_from(kind).unwrap();
+            for _ in 0..10 {
+                let v = distr.sample(&mut rng).as_secs_f64();
+                assert!(v >= 0.0, "{kind:?} produced negative sample {v}");
+            }
+        }
     }
 }
