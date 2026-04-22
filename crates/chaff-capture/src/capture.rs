@@ -210,12 +210,12 @@ fn packets_to_trace(
     assert_eq!(
         directions.len(),
         timing_deltas.len(),
-        "Length of directions and timing deltas do not match after conversion of packet to trace."
+        "length of directions and timing deltas do not match after conversion of packet to trace."
     );
     assert_eq!(
         sizes.len(),
         timing_deltas.len(),
-        "Length of sizes and timing deltas do not match after conversion of packet to trace."
+        "length of sizes and timing deltas do not match after conversion of packet to trace."
     );
 
     Ok(Trace {

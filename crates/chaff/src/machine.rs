@@ -44,23 +44,23 @@ impl Machine {
         }
 
         // check for transitions to invalid states
-        let invalid_transitions = states
+        let mut invalid_transitions = states
             .iter()
             .filter_map(|state| state.trans_probs.as_ref())
             .flat_map(|probs| probs.0.values())
             .flat_map(|transitions| transitions.iter().map(|transition| transition.index))
             .filter(|&index| index > num_states)
-            .collect::<Vec<_>>();
+            .peekable();
 
-        if !invalid_transitions.is_empty() {
+        if invalid_transitions.peek().is_some() {
             errors.push(ValidationError::TransitionToInvalidState(
-                invalid_transitions.into_boxed_slice(),
+                invalid_transitions.collect(),
             ));
         }
 
         // check for state actions which would try to interact with
         // non-existent queues
-        let invalid_state_action_queues = states
+        let mut invalid_state_action_queues = states
             .iter()
             .map(|state| state.action.clone())
             .filter_map(|action| match action {
@@ -75,11 +75,11 @@ impl Machine {
                 },
                 Some(Action::Integrator(_)) | None => None,
             })
-            .collect::<Vec<_>>();
+            .peekable();
 
-        if !invalid_state_action_queues.is_empty() {
+        if invalid_state_action_queues.peek().is_some() {
             errors.push(ValidationError::InvalidStateActionQueue(
-                invalid_state_action_queues.into_boxed_slice(),
+                invalid_state_action_queues.collect(),
             ));
         }
 
