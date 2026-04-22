@@ -17,8 +17,7 @@ workspace = true
 default = []
 
 [dependencies]
-chaff = { version = "0.1.0", path = "../chaff/" }
 chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true

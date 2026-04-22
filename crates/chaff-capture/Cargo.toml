@@ -18,12 +18,12 @@ default = []
 
 [dependencies]
 chaff = { version = "0.1.0", path = "../chaff/" }
-mac_address = "1.1.8"
-pcap = "2.4.0"
+mac_address.workspace = true
+pcap.workspace = true
 
 [[example]]
 name = "capture"
 path = "examples/capture.rs"
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true

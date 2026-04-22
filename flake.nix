@@ -70,6 +70,7 @@
         buildInputs = with pkgs; [libpcap];
         extraShellInputs = with pkgs; [
           cargo-audit
+          cargo-edit
           cargo-flamegraph
           cargo-machete
           cargo-nextest
