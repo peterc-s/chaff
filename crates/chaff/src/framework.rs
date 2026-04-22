@@ -179,8 +179,9 @@ mod tests {
     #[test]
     fn test_get_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])]).unwrap();
-        let machine = Machine::new(
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])])
+                .unwrap();
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs.clone()),
@@ -201,8 +202,9 @@ mod tests {
     #[test]
     fn test_trigger_and_get_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
-        let machine = Machine::new(
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs.clone()),
@@ -228,8 +230,9 @@ mod tests {
     #[test]
     fn test_trigger_with_0_trans_probs() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])]).unwrap();
-        let machine = Machine::new(
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])])
+                .unwrap();
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs.clone()),
@@ -254,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_get_trans_probs_state_with_no_trans_probs() {
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [],
         )
@@ -269,9 +272,10 @@ mod tests {
     #[test]
     fn test_trigger_events_no_matching_event() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), None::<Action>, None),
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
@@ -291,9 +295,10 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_all() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
                 State::new(None, Some(FrameworkAction::CancelAll), None),
@@ -321,8 +326,9 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_queue() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
-        let machine = Machine::new(
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
                 State::new(None, Some(FrameworkAction::CancelQueue(0)), None),
@@ -386,9 +392,10 @@ mod tests {
     #[test]
     fn test_perform_action_schedule_far_doesnt_pop() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), None::<Action>, None),
                 State::new(
@@ -421,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_all_via_queue() {
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [None; 3],
         )
@@ -452,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_perform_action_cancel_queue_via_queue() {
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [None, None],
         )
@@ -488,7 +495,7 @@ mod tests {
     #[test]
     fn test_perform_action_schedule_via_queue() {
         let machine =
-            Machine::new(vec![State::new(None, None::<Action>, None)], [None, None]).unwrap();
+            Machine::try_new(vec![State::new(None, None::<Action>, None)], [None, None]).unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -607,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_framework_action_schedule_samples_delay() {
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::ReleaseBlock), None)],
             [None],
         )
