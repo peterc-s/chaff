@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use rand::Rng;
+use rand_distr::Distribution as _;
 
 use crate::{
     action::{Action, FrameworkAction, IntegratorAction},
@@ -46,7 +47,7 @@ impl<R: Rng> Framework<R> {
                 delay,
             } => {
                 if !self.runtime.queues[queue as usize].push(TimedAction {
-                    execute_at: now + delay.sample_dyn(&mut self.rng),
+                    execute_at: now + delay.sample(&mut self.rng),
                     action: int_action.into(),
                 }) {
                     self.runtime.deferred_events.push(Event::QueueFull(queue));
@@ -168,6 +169,7 @@ mod tests {
     use super::*;
     use crate::{
         action::{FrameworkAction, IntegratorAction},
+        distr::DistrKind,
         event::Event,
         machine,
         machine::Machine,
@@ -362,7 +364,7 @@ mod tests {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
-                    Duration::from_secs(999)
+                    DistrKind::Constant(999.0).try_into().unwrap()
                 ),
             }
         }
@@ -394,7 +396,7 @@ mod tests {
                     Some(FrameworkAction::schedule(
                         IntegratorAction::SendDecoy,
                         0,
-                        Duration::from_secs(999),
+                        DistrKind::Constant(999.0).try_into().unwrap(),
                     )),
                     None,
                 ),
@@ -494,8 +496,12 @@ mod tests {
 
         let _ = framework.runtime.queues[0].push(TimedAction {
             execute_at: now,
-            action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, Duration::ZERO)
-                .into(),
+            action: FrameworkAction::schedule(
+                IntegratorAction::SendDecoy,
+                1,
+                DistrKind::Constant(0.0).try_into().unwrap(),
+            )
+            .into(),
         });
 
         // queues should get popped, schedule action should be processed as it
@@ -608,8 +614,11 @@ mod tests {
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
 
-        let action =
-            FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, Duration::from_secs(5));
+        let action = FrameworkAction::schedule(
+            IntegratorAction::SendDecoy,
+            0,
+            DistrKind::Constant(5.0).try_into().unwrap(),
+        );
 
         framework.perform_action(action, Instant::now());
         assert_eq!(framework.runtime.queues[0].queue.len(), 1);
@@ -617,13 +626,14 @@ mod tests {
 
     #[test]
     fn test_queue_capacity_limit() {
+        let long_delay = DistrKind::Constant(999.0).try_into().unwrap();
         let machine = machine! {
             queues: [Some(1)],
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
-                    Duration::from_secs(999)
+                    long_delay,
                 ),
                 transitions: [
                     Event::ReceiveNormal => init,
@@ -634,7 +644,7 @@ mod tests {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
-                    Duration::from_secs(999)
+                    long_delay,
                 ),
                 transitions: [Event::QueueFull(0) => end],
             },
@@ -778,7 +788,7 @@ mod tests {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
-                    Duration::from_millis(15)
+                    DistrKind::Constant(Duration::from_millis(15).as_secs_f64()).try_into().unwrap(),
                 ),
                 transitions: [
                     Event::SendNormal => fill_queue,

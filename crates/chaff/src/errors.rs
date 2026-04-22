@@ -50,13 +50,12 @@ pub enum ValidationError {
 
     /// A machine must have at least one state.
     NoStates,
+
+    /// Constructed random distribution from [`rand_distr`] from was invalid.
+    InvalidDistr(String),
 }
 
-impl Error for ValidationError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-}
+impl Error for ValidationError {}
 
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -86,6 +85,7 @@ impl fmt::Display for ValidationError {
             }
             Self::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
             Self::NoStates => write!(f, "machines must have at least one state"),
+            Self::InvalidDistr(err) => write!(f, "invalid distribution: {err}"),
         }
     }
 }

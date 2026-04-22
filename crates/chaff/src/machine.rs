@@ -344,10 +344,11 @@ impl MachineRuntime {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{rc::Rc, time::Duration};
-
     use crate::{
-        action::IntegratorAction, distr::Constant, event::Event, framework::Framework,
+        action::IntegratorAction,
+        distr::{Distr, DistrKind},
+        event::Event,
+        framework::Framework,
         state::TransitionProbs,
     };
 
@@ -421,6 +422,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -430,11 +433,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 1,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        1,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
@@ -449,6 +452,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -458,11 +463,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 3,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        3,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
@@ -487,6 +492,8 @@ mod tests {
         let trans_probs =
             TransitionProbs::new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])]).unwrap();
 
+        let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
         let machine = Machine::new(
             vec![
                 State::new(
@@ -496,11 +503,11 @@ mod tests {
                 ),
                 State::new(
                     None,
-                    Some(FrameworkAction::Schedule {
-                        action: IntegratorAction::SendDecoy,
-                        queue: 3,
-                        delay: Rc::new(Constant(Duration::from_secs(1))),
-                    }),
+                    Some(FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        3,
+                        const_distr,
+                    )),
                     None,
                 ),
             ],
