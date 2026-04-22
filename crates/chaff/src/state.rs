@@ -162,7 +162,7 @@ impl TransitionProbs {
 
     /// Construct a new [`TransitionProbs`] using an array of tuples.
     ///
-    /// The same caveat in [`TransitionProbs::new`] applies here.
+    /// The same caveat in [`TransitionProbs::try_new`] applies here.
     ///
     /// # Errors
     ///
