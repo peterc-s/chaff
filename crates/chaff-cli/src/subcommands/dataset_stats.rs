@@ -18,8 +18,8 @@ pub fn run(dataset_type: &str, path: &PathBuf) -> Result<(), CliError> {
         "Total packets: {}",
         dataset
             .get_dataset()
-            .iter()
-            .flat_map(|(_, traces)| traces.iter().map(|trace| trace.len() as u64))
+            .values()
+            .flat_map(|traces| traces.iter().map(|trace| trace.len() as u64))
             .sum::<u64>()
     );
 

@@ -12,10 +12,7 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
-#[cfg_attr(
-    feature = "borsh",
-    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
-)]
+#[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
@@ -101,13 +98,27 @@ impl Machine {
     /// invalid transitions ([`ValidationError::TransitionToInvalidState`]), because there are state
     /// actions that would try to interact with non-existent queues
     /// ([`ValidationError::InvalidStateActionQueue`]), or both ([`ValidationError::Multiple`]).
-    pub fn new(
+    pub fn try_new(
         states: impl Into<Vec<State>>,
         queues: impl Into<Vec<Option<usize>>>,
     ) -> Result<Self, ValidationError> {
         let queues = queues.into();
         let states = states.into();
         Self::validate(&states, queues.len())?;
+        Ok(Self { states, queues })
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl borsh::BorshDeserialize for Machine {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let states: Vec<State> = borsh::BorshDeserialize::deserialize_reader(reader)?;
+        let queues: Vec<Option<usize>> = borsh::BorshDeserialize::deserialize_reader(reader)?;
+
+        Self::validate(&states, queues.len()).map_err(|err| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
+        })?;
+
         Ok(Self { states, queues })
     }
 }
@@ -148,7 +159,7 @@ impl Machine {
 ///     }
 /// }.unwrap();
 ///
-/// let machine_manual = Machine::new(
+/// let machine_manual = Machine::try_new(
 ///     vec![
 ///         State::new(
 ///             Some(TransitionProbs::from_tuples([
@@ -282,7 +293,7 @@ macro_rules! machine {
             )*
 
             // build the machine
-            $crate::machine::Machine::new(states, $queues)
+            $crate::machine::Machine::try_new(states, $queues)
         })()
     }};
 }
@@ -362,9 +373,10 @@ mod tests {
     #[test]
     fn test_queues_correct_len() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 0.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
@@ -404,9 +416,10 @@ mod tests {
     #[test]
     fn test_validate_invalid_state() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(3, 0.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(3, 0.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
@@ -425,11 +438,12 @@ mod tests {
     #[test]
     fn test_validate_good_queues() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs),
@@ -455,11 +469,12 @@ mod tests {
     #[test]
     fn test_validate_invalid_state_action_queue() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs),
@@ -495,11 +510,12 @@ mod tests {
     #[test]
     fn test_multiple_validation_errors() {
         let trans_probs =
-            TransitionProbs::new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::SendNormal, [(5, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let const_distr: Distr = DistrKind::Constant(1.0).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_probs),
@@ -531,7 +547,7 @@ mod tests {
     #[test]
     fn test_too_many_queues() {
         const U8_MAX_PLUS_ONE: usize = u8::MAX as usize + 1;
-        let err = Machine::new([], [None; U8_MAX_PLUS_ONE]);
+        let err = Machine::try_new([], [None; U8_MAX_PLUS_ONE]);
         assert!(matches!(
             err,
             Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
@@ -547,62 +563,143 @@ mod tests {
         assert!(matches!(err, Err(ValidationError::NoStates)));
     }
 
-    #[test]
     #[cfg(feature = "borsh")]
-    fn test_borsh_machine_round_trip() {
-        use std::io::{Read as _, Seek as _};
+    mod borsh {
+        use super::*;
+        use std::{
+            fs::File,
+            io::{Read as _, Seek as _},
+            path::PathBuf,
+        };
 
-        use borsh::{BorshDeserialize as _, BorshSerialize as _};
+        use ::borsh::{BorshDeserialize as _, BorshSerialize as _};
         use tempfile::NamedTempFile;
 
-        let machine = machine! {
-            queues: [Some(4), None],
+        #[test]
+        fn test_borsh_machine_round_trip() {
+            let machine = machine! {
+                queues: [Some(4), None],
 
-            state init {
-                action: IntegratorAction::SendDecoy,
-                budget: 25,
-                transitions: [
-                    Event::SendNormal => [(jump, 0.5)],
-                    Event::ReceiveNormal => jump
-                ],
-            },
+                state init {
+                    action: IntegratorAction::SendDecoy,
+                    budget: 25,
+                    transitions: [
+                        Event::SendNormal => [(jump, 0.5), (end, 0.5)],
+                        Event::ReceiveNormal => jump
+                    ],
+                },
 
-            state jump {
-                transitions: [
-                    Event::SendNormal => end,
-                    Event::ReceiveNormal => other,
-                ]
-            },
+                state jump {
+                    transitions: [
+                        Event::SendNormal => end,
+                        Event::ReceiveNormal => other,
+                    ]
+                },
 
-            state other {
-                action: FrameworkAction::schedule(
-                    IntegratorAction::SendDecoy,
-                    0,
-                    DistrKind::Uniform {
-                        low: 0.1,
-                        high: 0.2
-                    }.try_into().unwrap()
-                ),
-                transitions: [
-                    Event::SendNormal => end,
-                ]
-            },
+                state other {
+                    action: FrameworkAction::schedule(
+                        IntegratorAction::SendDecoy,
+                        0,
+                        DistrKind::Uniform {
+                            low: 0.1,
+                            high: 0.2
+                        }.try_into().unwrap()
+                    ),
+                    transitions: [
+                        Event::SendNormal => end,
+                    ]
+                },
 
-            state end {
-                action: IntegratorAction::SendDecoy
+                state end {
+                    action: IntegratorAction::SendDecoy
+                }
+            }
+            .unwrap();
+
+            let mut file = NamedTempFile::new().unwrap();
+            // let mut tmp = std::env::temp_dir();
+            // tmp.push("test-extra.machine");
+            // let mut tmp_file = File::create(tmp).unwrap();
+            // machine.serialize(&mut tmp_file).unwrap();
+
+            machine.serialize(&mut file).expect("failed to serialize");
+            file.rewind().unwrap();
+
+            let mut bytes = vec![];
+            file.read_to_end(&mut bytes).expect("Failed to read");
+            let machine_de = Machine::deserialize(&mut bytes.as_slice()).unwrap();
+
+            assert_eq!(machine, machine_de);
+        }
+
+        #[test]
+        fn test_borsh_machine_bad_probs() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/corrupt-probability.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
             }
         }
-        .unwrap();
 
-        let mut file = NamedTempFile::new().unwrap();
+        #[test]
+        fn test_borsh_machine_bad_states_len() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/corrupt-states-len.machine");
 
-        machine.serialize(&mut file).expect("failed to serialize");
-        file.rewind().unwrap();
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
 
-        let mut bytes = vec![];
-        file.read_to_end(&mut bytes).expect("Failed to read");
-        let machine_de = Machine::deserialize(&mut bytes.as_slice()).unwrap();
+        #[test]
+        fn test_borsh_machine_bad_queue_access() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/corrupt-queue-access.machine");
 
-        assert_eq!(machine, machine_de);
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn test_borsh_machine_bad_trans_probs_sum_probability() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/corrupt-sum-probability.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn test_borsh_machine_bad_distr_params() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/corrupt-distr.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
     }
 }

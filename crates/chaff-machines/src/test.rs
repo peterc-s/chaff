@@ -19,10 +19,11 @@ use chaff::{
 #[expect(clippy::unwrap_used)]
 #[must_use]
 pub fn construct_test_machine() -> Machine {
-    let trans_probs = TransitionProbs::new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])])
-        .expect("Transition probabilities are invalid.");
+    let trans_probs =
+        TransitionProbs::try_new([(Event::SendNormal, [(1, 0.5).try_into().unwrap()])])
+            .expect("Transition probabilities are invalid.");
 
-    Machine::new(
+    Machine::try_new(
         vec![
             State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
             State::new(None, Some(IntegratorAction::SendDecoy), None),

@@ -314,13 +314,15 @@ mod tests {
     #[test]
     fn test_block_and_manual_release() {
         let trans_0_to_1 =
-            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
         let trans_1_to_2 =
-            TransitionProbs::new([(Event::ReceiveNormal, [(2, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::ReceiveNormal, [(2, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let long_delay = DistrKind::Constant(999.0).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_0_to_1),
@@ -378,11 +380,12 @@ mod tests {
     #[test]
     fn test_block_natural_expiration() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let long_delay = Duration::from_micros(50).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
                 State::new(
@@ -420,9 +423,10 @@ mod tests {
     #[test]
     fn test_send_decoy() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
@@ -464,7 +468,7 @@ mod tests {
         let trans_0_to_1 =
             TransitionProbs::from_tuples([(Event::ReceiveNormal, [(1, 1.0)])]).unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(
                     Some(trans_0_to_1),
@@ -520,11 +524,12 @@ mod tests {
     #[test]
     fn test_block_expires_after_trace_ends() {
         let trans =
-            TransitionProbs::new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])]).unwrap();
+            TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
+                .unwrap();
 
         let long_delay = Duration::from_micros(999).try_into().unwrap();
 
-        let machine = Machine::new(
+        let machine = Machine::try_new(
             vec![
                 State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
                 State::new(

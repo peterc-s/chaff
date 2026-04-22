@@ -423,6 +423,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_constant_samples_exact_value() {
         assert_eq!(sample(DistrKind::Constant(2.5)), 2.5);
     }
@@ -435,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_with_offset() {
         let distr = Distr::try_from(DistrKind::Constant(1.0))
             .unwrap()

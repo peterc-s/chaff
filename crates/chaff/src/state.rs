@@ -42,10 +42,7 @@ impl State {
 
 /// Represents a stochastic transition from a state to another at [`Transition::index`] with
 /// probability [`Transition::prob`].
-#[cfg_attr(
-    feature = "borsh",
-    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
-)]
+#[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transition {
     /// The index of the state to transition to.
@@ -55,26 +52,59 @@ pub struct Transition {
     pub prob: f32,
 }
 
-impl TryFrom<(usize, f32)> for Transition {
-    type Error = ValidationError;
+impl Transition {
+    /// Try to create a new [`Transition`].
+    ///
+    /// # Errors
+    ///
+    /// If [`Transition::validate`] fails.
+    pub fn try_new(index: usize, prob: f32) -> Result<Self, ValidationError> {
+        Self::validate(prob)?;
+        Ok(Self { index, prob })
+    }
 
-    fn try_from(value: (usize, f32)) -> Result<Self, Self::Error> {
-        if (0.0..=1.0).contains(&value.1) {
-            Ok(Self {
-                index: value.0,
-                prob: value.1,
-            })
+    /// Validate the probability for a [`Transition`].
+    ///
+    /// # Errors
+    ///
+    /// If the given probability is outside of (0.0..=1.0).
+    pub fn validate(prob: f32) -> Result<(), ValidationError> {
+        if (0.0..=1.0).contains(&prob) {
+            Ok(())
         } else {
-            Err(ValidationError::BadTransitionProbs(value.1))
+            Err(ValidationError::BadTransitionProbs(prob))
         }
     }
 }
 
+impl TryFrom<(usize, f32)> for Transition {
+    type Error = ValidationError;
+
+    fn try_from(value: (usize, f32)) -> Result<Self, Self::Error> {
+        Self::validate(value.1)?;
+        Ok(Self {
+            index: value.0,
+            prob: value.1,
+        })
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl borsh::BorshDeserialize for Transition {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let index: usize = borsh::BorshDeserialize::deserialize_reader(reader)?;
+        let prob: f32 = borsh::BorshDeserialize::deserialize_reader(reader)?;
+
+        Self::validate(prob).map_err(|err| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
+        })?;
+
+        Ok(Self { index, prob })
+    }
+}
+
 /// Represents the transition probabilities for all events.
-#[cfg_attr(
-    feature = "borsh",
-    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
-)]
+#[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransitionProbs(pub HashMap<Event, Vec<Transition>>);
 
@@ -88,20 +118,19 @@ impl TransitionProbs {
     ///
     /// # Errors
     ///
-    /// Can give a [`ValidationError::BadTransitionProbs`] if the given transition probabilities sum
-    /// up to a value outside of the `0.0..=1.0` range.
+    /// If [`TransitionProbs::validate`] fails.
     ///
     /// # Example
     ///
     /// ```rust
     /// use chaff::{event::Event, state::{Transition, TransitionProbs}};
     ///
-    /// let trans_probs = TransitionProbs::new([
+    /// let trans_probs = TransitionProbs::try_new([
     ///     (Event::SendNormal, [(1, 0.5).try_into().unwrap()]),
     ///     (Event::QueuePopped(1), [(2, 0.5).try_into().unwrap()]),
     /// ]).unwrap();
     /// ```
-    pub fn new(
+    pub fn try_new(
         pairs: impl IntoIterator<Item = (Event, impl Into<Vec<Transition>>)>,
     ) -> Result<Self, ValidationError> {
         let mut map: HashMap<Event, Vec<Transition>> = HashMap::new();
@@ -110,19 +139,30 @@ impl TransitionProbs {
             map.entry(event).or_default().extend(transitions.into());
         }
 
-        for transitions in map.values() {
-            let sum: f32 = transitions.iter().map(|t| t.prob).sum();
-            if !(0.0..=1.0).contains(&sum) {
-                return Err(ValidationError::BadTransitionProbs(sum));
-            }
-        }
+        Self::validate(&map)?;
 
         Ok(Self(map))
     }
 
+    /// Validates the inner map of a [`TransitionProbs`].
+    ///
+    /// # Errors
+    ///
+    /// Can give a [`ValidationError::BadTransitionProbs`] if the given transition probabilities sum
+    /// up to a value outside of the `0.0..=1.0` range.
+    pub fn validate(map: &HashMap<Event, Vec<Transition>>) -> Result<(), ValidationError> {
+        for transitions in map.values() {
+            let sum: f32 = transitions.iter().map(|t| t.prob).sum();
+            if !(0.0..=1.0).contains(&sum) {
+                Err(ValidationError::BadTransitionProbs(sum))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Construct a new [`TransitionProbs`] using an array of tuples.
     ///
-    /// The same caveat in [`TransitionProbs::new`] applies here.
+    /// The same caveat in [`TransitionProbs::try_new`] applies here.
     ///
     /// # Errors
     ///
@@ -165,7 +205,7 @@ impl TransitionProbs {
             ));
         }
 
-        Self::new(valid_transitions)
+        Self::try_new(valid_transitions)
     }
 
     /// Try to get the [`Vec<Transition>`] associated with the given [`Event`].
@@ -191,6 +231,20 @@ impl TransitionProbs {
     }
 }
 
+#[cfg(feature = "borsh")]
+impl borsh::BorshDeserialize for TransitionProbs {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let map: HashMap<Event, Vec<Transition>> =
+            borsh::BorshDeserialize::deserialize_reader(reader)?;
+
+        Self::validate(&map).map_err(|err| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
+        })?;
+
+        Ok(Self(map))
+    }
+}
+
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
@@ -198,19 +252,19 @@ mod tests {
 
     #[test]
     fn test_probs_validation() {
-        let over_1 = TransitionProbs::new([(
+        let over_1 = TransitionProbs::try_new([(
             Event::SendNormal,
             [(0, 0.6).try_into().unwrap(), (1, 0.5).try_into().unwrap()],
         )]);
         assert!(over_1.is_err());
 
-        let exact_1 = TransitionProbs::new([(
+        let exact_1 = TransitionProbs::try_new([(
             Event::SendNormal,
             [(0, 0.5).try_into().unwrap(), (1, 0.5).try_into().unwrap()],
         )]);
         assert!(exact_1.is_ok());
 
-        let multiple_events_exact_1 = TransitionProbs::new([
+        let multiple_events_exact_1 = TransitionProbs::try_new([
             (Event::SendNormal, [(0, 1.0).try_into().unwrap()]),
             (Event::ReceiveNormal, [(0, 1.0).try_into().unwrap()]),
         ]);
@@ -245,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_get_transition() {
-        let trans_probs = TransitionProbs::new([(
+        let trans_probs = TransitionProbs::try_new([(
             Event::SendNormal,
             [(1, 0.5).try_into().unwrap(), (2, 0.5).try_into().unwrap()],
         )])
@@ -261,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_probs_validation_multiple_same_event() {
-        let over_1_combined = TransitionProbs::new([
+        let over_1_combined = TransitionProbs::try_new([
             (Event::SendNormal, [(0, 0.6).try_into().unwrap()]),
             (Event::SendNormal, [(1, 0.5).try_into().unwrap()]),
         ]);

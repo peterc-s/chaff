@@ -57,7 +57,7 @@ pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, 
     let linktype = open_cap.get_datalink();
 
     let break_handle = open_cap.breakloop_handle();
-    let capture_thread = std::thread::spawn(move || {
+    let capture_thread = std::thread::spawn(move || -> Result<_, pcap::Error> {
         // TODO: tune capacity to minimise reallocs?
         let mut packets: Vec<(PacketHeader, Vec<u8>)> = Vec::with_capacity(4096);
         loop {
@@ -67,8 +67,8 @@ pub fn capture_for(duration: Duration, device: Option<Device>) -> Result<Trace, 
             } else if matches!(maybe_pkt, Err(pcap::Error::NoMorePackets)) {
                 println!("Timeout expired.");
                 break;
-            } else if let Err(e) = maybe_pkt {
-                return Err(e);
+            } else {
+                maybe_pkt?;
             }
         }
         Ok(packets)
