@@ -47,6 +47,9 @@ pub enum ValidationError {
 
     /// A minimum value exceeds a maximum value when it should not.
     MinExceedsMax(String),
+
+    /// A machine must have at least one state.
+    NoStates,
 }
 
 impl Error for ValidationError {
@@ -82,6 +85,7 @@ impl fmt::Display for ValidationError {
                 Ok(())
             }
             Self::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
+            Self::NoStates => write!(f, "machines must have at least one state"),
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Represents an instance of the Chaff framework.
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Framework<R: Rng> {
     pub(crate) machine: Machine,
     pub(crate) runtime: MachineRuntime,
@@ -34,14 +34,7 @@ impl<R: Rng> Framework<R> {
 
     /// Get the [`TransitionProbs`] of the current state as a reference.
     pub fn get_trans_probs(&self) -> Option<&TransitionProbs> {
-        // tests do exist for this, but tarpaulin seemingly can't
-        // determine whether `.states` or `.trans_probs` are covered
-        #[cfg(not(tarpaulin_include))]
-        self.machine
-            .states
-            .get(self.runtime.state)?
-            .trans_probs
-            .as_ref()
+        self.machine.states[self.runtime.state].trans_probs.as_ref()
     }
 
     /// Perform the given [`FrameworkAction`].
@@ -93,12 +86,7 @@ impl<R: Rng> Framework<R> {
 
         // initialisation
         if !self.runtime.initialised {
-            if let Some(action) = self
-                .machine
-                .states
-                .get(self.runtime.state)
-                .and_then(|state| state.action.as_ref())
-            {
+            if let Some(action) = &self.machine.states[self.runtime.state].action {
                 actions.push(action.clone());
             }
             self.runtime.initialised = true;
@@ -107,26 +95,22 @@ impl<R: Rng> Framework<R> {
         // handle deferred + triggered events
         let prior_deferred = std::mem::take(&mut self.runtime.deferred_events);
         for event in prior_deferred.iter().chain(events) {
-            let Some(new_state) = self
-                .machine
-                .states
-                .get(self.runtime.state)
-                .and_then(|state| state.trans_probs.as_ref())
+            if let Some(new_state) = self.machine.states[self.runtime.state]
+                .trans_probs
+                .as_ref()
                 .and_then(|trans_probs| trans_probs.trigger(&mut self.rng, *event))
-            else {
-                continue;
-            };
-
-            if self.runtime.state != new_state {
-                self.runtime.state = new_state;
-                self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
-                if self.runtime.current_budget == Some(0) {
-                    deferred.push(Event::StateBudgetExhausted);
+            {
+                if self.runtime.state != new_state {
+                    self.runtime.state = new_state;
+                    self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+                    if self.runtime.current_budget == Some(0) {
+                        deferred.push(Event::StateBudgetExhausted);
+                    }
                 }
-            }
 
-            if let Some(action) = &self.machine.states[new_state].action {
-                actions.push(action.clone());
+                if let Some(action) = &self.machine.states[new_state].action {
+                    actions.push(action.clone());
+                }
             }
         }
 
@@ -264,21 +248,6 @@ mod tests {
 
         assert_eq!(*framework.get_trans_probs().unwrap(), trans_probs);
         assert_eq!(framework.get_state(), 0);
-    }
-
-    #[test]
-    fn test_get_trans_probs_invalid_state() {
-        let machine = Machine::new(
-            vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
-            [],
-        )
-        .unwrap();
-        let mut framework = Framework::new(machine, rand::rng());
-
-        // force bad behaviour
-        framework.runtime.state = 999;
-
-        assert!(framework.get_trans_probs().is_none());
     }
 
     #[test]
@@ -830,13 +799,13 @@ mod tests {
         let now = Instant::now();
 
         framework.process(&[Event::ReceiveNormal], now);
-        assert_eq!(framework.runtime.state, 1);
+        assert_eq!(framework.get_state(), 1);
 
         framework.process(&[Event::SendNormal, Event::SendNormal], now);
-        assert_eq!(framework.runtime.state, 1);
+        assert_eq!(framework.get_state(), 1);
 
         framework.process(&[Event::ReceiveNormal], now);
-        assert_eq!(framework.runtime.state, 2);
+        assert_eq!(framework.get_state(), 2);
 
         // drain queue
         let now = now + Duration::from_millis(16);
@@ -845,11 +814,11 @@ mod tests {
             *actions,
             [IntegratorAction::SendDecoy, IntegratorAction::SendDecoy]
         );
-        assert_eq!(framework.runtime.state, 2);
+        assert_eq!(framework.get_state(), 2);
 
         // deferred event should cause transition
         framework.process(&[], now);
-        assert_eq!(framework.runtime.state, 3);
+        assert_eq!(framework.get_state(), 3);
     }
 
     #[test]
@@ -857,10 +826,9 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                transitions: [Event::SendNormal => schedule_decoy],
+                transitions: [Event::SendNormal => end],
             },
-            state schedule_decoy {
-            }
+            state end {},
         }
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -869,5 +837,33 @@ mod tests {
 
         assert!(actions.is_empty());
         assert!(framework.runtime.queues[0].queue.is_empty());
+    }
+
+    #[test]
+    fn test_no_transition() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                transitions: [
+                    Event::ReceiveNormal => [(end, 0.0)],
+                    Event::SendNormal => end,
+                ],
+            },
+            state end {},
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let actions = framework.process(&[Event::ReceiveNormal], Instant::now());
+
+        assert!(actions.is_empty());
+        assert!(framework.runtime.queues[0].queue.is_empty());
+        assert_eq!(framework.get_state(), 0);
+
+        let actions = framework.process(&[Event::SendDecoy], Instant::now());
+
+        assert!(actions.is_empty());
+        assert!(framework.runtime.queues[0].queue.is_empty());
+        assert_eq!(framework.get_state(), 0);
     }
 }

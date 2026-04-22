@@ -239,7 +239,12 @@ mod tests {
             timing_deltas: Box::new([10, 20, 30]),
             sizes: Box::new([100, 200, 300]),
         };
-        let framework = Framework::new(Machine::default(), rand::rng());
+        let machine = machine! {
+            queues: [],
+            state init {},
+        }
+        .unwrap();
+        let framework = Framework::new(machine, rand::rng());
         let mut sim: Simulator<_> = Simulator::with(framework, trace.clone(), rand::rng());
 
         let out_trace = sim.run();
@@ -266,7 +271,12 @@ mod tests {
 
             let in_trace = Trace::deserialise(&path).unwrap();
 
-            let framework = Framework::new(Machine::default(), rand::rng());
+            let machine = machine! {
+                queues: [],
+                state init {},
+            }
+            .unwrap();
+            let framework = Framework::new(machine, rand::rng());
             let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
             let out_trace = sim.run();
 
@@ -491,7 +501,12 @@ mod tests {
 
     #[test]
     fn test_simulator_empty_trace() {
-        let framework = Framework::new(Machine::default(), rand::rng());
+        let machine = machine! {
+            queues: [],
+            state init {},
+        }
+        .unwrap();
+        let framework = Framework::new(machine, rand::rng());
         let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
         let out = sim.run();
