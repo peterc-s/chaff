@@ -59,6 +59,7 @@ pub enum IntegratorAction {
 
 impl IntegratorAction {
     /// Ergonomic constructor for [`IntegratorAction::BlockOutgoing`].
+    #[must_use]
     pub fn block_outgoing(delay: Distr) -> Self {
         Self::BlockOutgoing(delay)
     }

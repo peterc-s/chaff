@@ -347,6 +347,7 @@ impl MachineRuntime {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
+#[expect(clippy::expect_used)]
 mod tests {
     use crate::{
         action::IntegratorAction,

@@ -238,6 +238,10 @@ impl borsh::BorshDeserialize for Distr {
 impl Distr {
     /// Try to create a new [`Distr`]. Fails if creating the underlying [`rand_distr`]
     /// [`rand_distr::Distribution`] fails.
+    ///
+    /// # Errors
+    ///
+    /// If [`ActiveDistr::try_from`] errors. Usually because parameters are invalid.
     pub fn try_new(
         kind: DistrKind,
         offset: Float,
@@ -287,6 +291,7 @@ fn maybe_clamp(val: f64, min: Option<f64>, max: Option<f64>) -> f64 {
 
 impl Distribution<Duration> for Distr {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Duration {
+        #[expect(clippy::cast_precision_loss)]
         Duration::from_secs_f64(
             maybe_clamp(
                 self.offset
