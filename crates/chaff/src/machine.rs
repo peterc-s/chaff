@@ -12,7 +12,7 @@ use crate::{
 
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
     pub(crate) states: Vec<State>,
     pub(crate) queues: Vec<Option<usize>>,
@@ -34,6 +34,10 @@ impl Machine {
 
         let mut errors = vec![];
         let num_states = states.len();
+
+        if num_states == 0 {
+            return Err(ValidationError::NoStates);
+        }
 
         // check for transitions to invalid states
         let invalid_transitions = states
@@ -232,10 +236,17 @@ macro_rules! machine {
             }
         ),* $(,)?
     ) => {{
+        // some invocations may cause a redundant closure call, so we allow it.
+        // workspace lints don't allow `allow` attributes, so expect a violation of it.
+        // aren't attributes great?
+        #[expect(clippy::allow_attributes)]
+        #[allow(clippy::redundant_closure_call)]
         (|| -> Result<$crate::machine::Machine, $crate::errors::ValidationError> {
             // assign sequential indices
             #[expect(clippy::allow_attributes)]
             #[allow(unused_variables)]
+            // this only happens when there are no states, which is already a validation error
+            #[allow(clippy::unused_unit)]
             let ($( $name, )*) = {
                 let mut _idx = 0usize;
                 $(
@@ -245,6 +256,9 @@ macro_rules! machine {
                 ($( $name, )*)
             };
 
+            // this only happens when there are no states, which is already a validation error
+            #[expect(clippy::allow_attributes)]
+            #[allow(unused_mut)]
             let mut states = Vec::new();
 
             // build states
@@ -362,7 +376,11 @@ mod tests {
 
     #[test]
     fn test_pop_queues_with_data() {
-        let machine = Machine::new(vec![], [None]).unwrap();
+        let machine = machine! {
+            queues: [None],
+            state init {}
+        }
+        .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
         let now = Instant::now();
 
@@ -506,5 +524,14 @@ mod tests {
             err,
             Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
         ));
+    }
+
+    #[test]
+    fn test_no_states_validation() {
+        let err = machine! {
+            queues: [],
+        };
+
+        assert!(matches!(err, Err(ValidationError::NoStates)))
     }
 }
