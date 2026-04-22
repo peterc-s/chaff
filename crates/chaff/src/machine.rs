@@ -284,6 +284,10 @@ pub struct MachineRuntime {
 
     /// Current state budget.
     pub(crate) current_budget: Option<usize>,
+
+    /// If the machine has been used at all yet. Used for checking if the initial state's action has
+    /// been processed or sent to the integrator.
+    pub(crate) initialised: bool,
 }
 
 impl MachineRuntime {
@@ -300,6 +304,7 @@ impl MachineRuntime {
             queues,
             deferred_events: vec![],
             current_budget: m.states.first().and_then(|state| state.decoy_budget),
+            initialised: false,
         }
     }
 

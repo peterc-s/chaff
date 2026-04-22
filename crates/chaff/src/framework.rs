@@ -24,6 +24,7 @@ impl<R: Rng> Framework<R> {
     /// Create a new Chaff instance with the given RNG ([`rand::Rng`]) and [`Machine`].
     pub fn new(machine: Machine, rng: R) -> Self {
         let runtime = MachineRuntime::new(&machine);
+
         Self {
             machine,
             runtime,
@@ -65,6 +66,147 @@ impl<R: Rng> Framework<R> {
         }
     }
 
+    /// Handle an [`IntegratorAction`], this may cause an [`Event::StateBudgetExhausted`].
+    fn handle_integrator_action(
+        action: &IntegratorAction,
+        mut current_budget: &mut Option<usize>,
+        new_deferred_events: &mut Vec<Event>,
+        integrator_actions: &mut Vec<IntegratorAction>,
+    ) {
+        if matches!(action, IntegratorAction::SendDecoy)
+            && let Some(budget) = &mut current_budget
+        {
+            if *budget == 0 {
+                return;
+            }
+            *budget = budget.saturating_sub(1);
+            if *budget == 0 {
+                new_deferred_events.push(Event::StateBudgetExhausted);
+            }
+        }
+        integrator_actions.push(action.clone());
+    }
+
+    /// Pushes [`FrameworkAction`]s to `framework_out` and defers [`IntegratorAction`]s to
+    /// [`Self::handle_integrator_action`].
+    fn handle_action(
+        action: &Action,
+        budget: &mut Option<usize>,
+        deferred: &mut Vec<Event>,
+        integrator_out: &mut Vec<IntegratorAction>,
+        framework_out: &mut Vec<FrameworkAction>,
+    ) {
+        match action {
+            Action::Framework(a) => framework_out.push(a.clone()),
+            Action::Integrator(a) => {
+                Self::handle_integrator_action(a, budget, deferred, integrator_out);
+            }
+        }
+    }
+
+    /// Handle the initial state action if there is one and if the [`MachineRuntime`] has not been initialised.
+    fn maybe_initialize(
+        &mut self,
+        deferred: &mut Vec<Event>,
+        integrator_out: &mut Vec<IntegratorAction>,
+        framework_out: &mut Vec<FrameworkAction>,
+    ) {
+        if self.runtime.initialised {
+            return;
+        }
+
+        if let Some(action) = self
+            .machine
+            .states
+            .get(self.runtime.state)
+            .and_then(|s| s.action.as_ref())
+        {
+            Self::handle_action(
+                action,
+                &mut self.runtime.current_budget,
+                deferred,
+                integrator_out,
+                framework_out,
+            );
+        }
+        self.runtime.initialised = true;
+    }
+
+    /// Process the [`Event`]s given by the integrator.
+    fn process_events(
+        &mut self,
+        events: &[Event],
+        deferred: &mut Vec<Event>,
+        integrator_out: &mut Vec<IntegratorAction>,
+        framework_out: &mut Vec<FrameworkAction>,
+    ) {
+        let all_events: Vec<Event> = self
+            .runtime
+            .deferred_events
+            .iter()
+            .copied()
+            .chain(events.iter().copied())
+            .collect();
+
+        for event in &all_events {
+            let Some(new_state) = self
+                .machine
+                .states
+                .get(self.runtime.state)
+                .and_then(|s| s.trans_probs.as_ref())
+                .and_then(|tp| tp.trigger(&mut self.rng, *event))
+            else {
+                continue;
+            };
+
+            // budget
+            if self.runtime.state != new_state {
+                self.runtime.state = new_state;
+                self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
+                if self.runtime.current_budget == Some(0) {
+                    deferred.push(Event::StateBudgetExhausted);
+                }
+            }
+
+            // handle action
+            if let Some(action) = &self.machine.states[new_state].action {
+                Self::handle_action(
+                    action,
+                    &mut self.runtime.current_budget,
+                    deferred,
+                    integrator_out,
+                    framework_out,
+                );
+            }
+        }
+    }
+
+    /// Pop queues and handle the resulting [`Action`]s.
+    fn process_queues(
+        &mut self,
+        now: Instant,
+        deferred: &mut Vec<Event>,
+        integrator_out: &mut Vec<IntegratorAction>,
+        framework_out: &mut Vec<FrameworkAction>,
+    ) {
+        for (idx, action) in self.runtime.pop_queues(now) {
+            // emit queue popped or empty if necessary
+            deferred.push(Event::QueuePopped(idx));
+            if self.runtime.queues[idx as usize].is_empty() {
+                deferred.push(Event::QueueEmpty(idx));
+            }
+
+            // handle as usual
+            Self::handle_action(
+                &action,
+                &mut self.runtime.current_budget,
+                deferred,
+                integrator_out,
+                framework_out,
+            );
+        }
+    }
+
     /// Process batch of events and pops scheduled actions off [`MachineRuntime`] queues in that order.
     ///
     /// If a call causes a queue to be popped, a [`Event::QueuePopped`] event will be added to the
@@ -77,97 +219,30 @@ impl<R: Rng> Framework<R> {
     /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
     /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
-        // TODO: this is a bit unclear and also it isn't clear how it will affect integrators.
-        // should probably document it and think a bit more about the interaction.
-        //
-        // in a separate function as the budget handling should be consistent between handling events
-        // and popping queues.
-        fn handle_integrator_action(
-            action: &IntegratorAction,
-            mut current_budget: &mut Option<usize>,
-            new_deferred_events: &mut Vec<Event>,
-            integrator_actions: &mut Vec<IntegratorAction>,
-        ) {
-            if matches!(action, IntegratorAction::SendDecoy)
-                && let Some(budget) = &mut current_budget
-            {
-                if *budget == 0 {
-                    return;
-                }
-                *budget = budget.saturating_sub(1);
-                if *budget == 0 {
-                    new_deferred_events.push(Event::StateBudgetExhausted);
-                }
-            }
-            integrator_actions.push(action.clone());
-        }
-
         let mut integrator_actions = vec![];
         let mut framework_actions = vec![];
-        let mut new_deferred_events = vec![];
+        let mut new_deferred = vec![];
 
-        // handle events
-        for event in self.runtime.deferred_events.iter().chain(events) {
-            if let Some(new_state) = self
-                .machine
-                .states
-                .get(self.runtime.state)
-                .and_then(|state| state.trans_probs.as_ref())
-                .and_then(|trans_probs| trans_probs.trigger(&mut self.rng, *event))
-            {
-                let is_new_state = self.runtime.state != new_state;
-                self.runtime.state = new_state;
+        self.maybe_initialize(
+            &mut new_deferred,
+            &mut integrator_actions,
+            &mut framework_actions,
+        );
+        self.process_events(
+            events,
+            &mut new_deferred,
+            &mut integrator_actions,
+            &mut framework_actions,
+        );
+        self.process_queues(
+            now,
+            &mut new_deferred,
+            &mut integrator_actions,
+            &mut framework_actions,
+        );
 
-                if is_new_state {
-                    self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
-                    if self.runtime.current_budget == Some(0) {
-                        new_deferred_events.push(Event::StateBudgetExhausted);
-                    }
-                }
+        self.runtime.deferred_events = new_deferred;
 
-                match &self.machine.states[new_state].action {
-                    Some(Action::Framework(framework_action)) => {
-                        framework_actions.push(framework_action.clone());
-                    }
-                    Some(Action::Integrator(integrator_action)) => {
-                        handle_integrator_action(
-                            integrator_action,
-                            &mut self.runtime.current_budget,
-                            &mut new_deferred_events,
-                            &mut integrator_actions,
-                        );
-                    }
-                    None => {}
-                }
-            }
-        }
-
-        // pop queues
-        let queue_popped_binding = self.runtime.pop_queues(now);
-        queue_popped_binding.iter().for_each(|(idx, action)| {
-            new_deferred_events.push(Event::QueuePopped(*idx));
-            if self.runtime.queues[*idx as usize].is_empty() {
-                new_deferred_events.push(Event::QueueEmpty(*idx));
-            }
-            match action {
-                Action::Framework(framework_action) => {
-                    framework_actions.push(framework_action.clone());
-                }
-                Action::Integrator(integrator_action) => {
-                    handle_integrator_action(
-                        integrator_action,
-                        &mut self.runtime.current_budget,
-                        &mut new_deferred_events,
-                        &mut integrator_actions,
-                    );
-                }
-            }
-        });
-
-        // set new deferred events
-        self.runtime.deferred_events = new_deferred_events;
-
-        // perform framework actions
         for action in framework_actions {
             self.perform_action(action, now);
         }
@@ -308,7 +383,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
+                State::new(Some(trans_probs), None::<Action>, None),
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [],
@@ -393,7 +468,6 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: IntegratorAction::ReleaseBlock,
                 transitions: [Event::SendNormal => schedule_decoy],
             },
             state schedule_decoy {
@@ -426,7 +500,7 @@ mod tests {
 
         let machine = Machine::new(
             vec![
-                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
+                State::new(Some(trans_probs), None::<Action>, None),
                 State::new(
                     None,
                     Some(FrameworkAction::schedule(
@@ -523,11 +597,8 @@ mod tests {
 
     #[test]
     fn test_perform_action_schedule_via_queue() {
-        let machine = Machine::new(
-            vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
-            [None, None],
-        )
-        .unwrap();
+        let machine =
+            Machine::new(vec![State::new(None, None::<Action>, None)], [None, None]).unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -558,7 +629,6 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state wait_pop {
-                action: IntegratorAction::SendDecoy,
                 transitions: [Event::QueuePopped(0) => release],
             },
             state release {
