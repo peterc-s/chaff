@@ -18,9 +18,9 @@ default = []
 borsh = ["dep:borsh"]
 
 [dependencies]
-borsh = { version = "1.6.1", optional = true, features = ["de_strict_order", "derive"] }
-rand = "0.10.1"
-rand_distr = "0.6.0"
+borsh = { workspace = true, optional = true, features = ["de_strict_order", "derive"] }
+rand.workspace = true
+rand_distr.workspace = true
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true
