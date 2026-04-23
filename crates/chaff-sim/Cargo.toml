@@ -20,3 +20,6 @@ default = []
 chaff = { version = "0.1.0", path = "../chaff/" }
 chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }
 rand.workspace = true
+
+[dev-dependencies]
+chacha20 = { workspace = true, features = ["rng"] }

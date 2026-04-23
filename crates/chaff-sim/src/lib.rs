@@ -7,8 +7,8 @@ use std::{
 
 use chaff::{action::IntegratorAction, event::Event, framework::Framework};
 use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
-use rand::Rng;
 use rand::distr::Distribution as _;
+use rand::{CryptoRng, Rng};
 
 /// A simulated event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,7 +97,7 @@ impl Extend<SimulatorEvent> for SimulatorQueue {
 
 /// An instance of the Chaff simulator.
 #[derive(Clone, Debug)]
-pub struct Simulator<R: Rng> {
+pub struct Simulator<R: Rng + CryptoRng> {
     /// An instance of the Chaff [`Framework`] to simulate.
     pub framework: Framework<R>,
 
@@ -142,7 +142,7 @@ impl BlockState {
     }
 }
 
-impl<R: Rng> Simulator<R> {
+impl<R: Rng + CryptoRng> Simulator<R> {
     /// Create a [`Simulator`], taking ownership of a [`Framework`] to simulate, with a given
     /// [`Trace`] to run the simulation on.
     pub fn with(framework: Framework<R>, trace: Trace, rng: R) -> Self {
@@ -222,13 +222,14 @@ impl<R: Rng> Simulator<R> {
 mod tests {
     use std::{fs, path::PathBuf};
 
+    use chacha20::ChaCha20Rng;
     use chaff::{
         distr::DistrKind,
         machine,
         machine::Machine,
         state::{State, TransitionProbs},
     };
-    use rand::{SeedableRng as _, rngs::SmallRng};
+    use rand::SeedableRng as _;
 
     use super::*;
 
@@ -481,7 +482,7 @@ mod tests {
         )
         .unwrap();
 
-        let framework = Framework::new(machine, SmallRng::from_seed([0; 32]));
+        let framework = Framework::new(machine, ChaCha20Rng::from_seed([0; 32]));
 
         let input_trace = Trace {
             directions: Box::new([Direction::Receive, Direction::Send, Direction::Send]),
@@ -489,7 +490,7 @@ mod tests {
             sizes: Box::new([100, 100, 100]),
         };
 
-        let mut sim = Simulator::with(framework, input_trace, SmallRng::from_seed([0; 32]));
+        let mut sim = Simulator::with(framework, input_trace, ChaCha20Rng::from_seed([0; 32]));
         let output_trace = sim.run();
 
         // expected:

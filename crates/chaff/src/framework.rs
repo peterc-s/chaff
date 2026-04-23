@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use rand::Rng;
+use rand::{CryptoRng, Rng};
 use rand_distr::Distribution as _;
 
 use crate::{
@@ -15,13 +15,13 @@ use crate::{
 
 /// Represents an instance of the Chaff framework.
 #[derive(Debug, Clone)]
-pub struct Framework<R: Rng> {
+pub struct Framework<R: Rng + CryptoRng> {
     pub(crate) machine: Machine,
     pub(crate) runtime: MachineRuntime,
     rng: R,
 }
 
-impl<R: Rng> Framework<R> {
+impl<R: Rng + CryptoRng> Framework<R> {
     /// Create a new Chaff instance with the given RNG ([`rand::Rng`]) and [`Machine`].
     pub fn new(machine: Machine, rng: R) -> Self {
         let runtime = MachineRuntime::new(&machine);

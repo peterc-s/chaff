@@ -33,6 +33,7 @@ pcap = "2.4.0"
 rand = "0.10.1"
 rand_distr = "0.6.0"
 tempfile = "3.27.0"
+chacha20 = "0.10.0"
 
 [profile.release]
 lto = true
