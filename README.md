@@ -5,7 +5,7 @@
     </summary>
   </ul>
 </div>
-<h2 align="center">An experimental website fingerprinting (WF) defence framework</h2>
+<h2 align="center">An experimental website fingerprinting (WF) defence framework.</h2>
 
 <div align="center">
   <picture>
