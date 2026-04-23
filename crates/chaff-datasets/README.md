@@ -6,4 +6,4 @@ This crate is used for parsing different datasets from different papers into a c
 
 This can currently parse:
 
-- WIP: [Tik-Tok](https://github.com/msrocean/Tik_Tok)
+- [Tik-Tok](https://github.com/msrocean/Tik_Tok)
