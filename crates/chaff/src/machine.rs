@@ -641,6 +641,20 @@ mod tests {
         }
 
         #[test]
+        fn test_borsh_machine_nan_probs() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/nan-probability.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+
+        #[test]
         fn test_borsh_machine_bad_probs() {
             let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             path.push("test-machines/corrupt-probability.machine");
