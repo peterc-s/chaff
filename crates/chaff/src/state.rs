@@ -328,4 +328,17 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         }
     }
+
+    #[test]
+    fn test_transition_try_new() {
+        let probs_ok = Transition::try_new(0, 0.5);
+        assert!(probs_ok.is_ok());
+
+        let probs_err = Transition::try_new(0, 1.0 + f32::EPSILON);
+        #[expect(clippy::float_cmp)]
+        match probs_err {
+            Err(ValidationError::BadTransitionProbs(prob)) => assert_eq!(prob, 1.0 + f32::EPSILON),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 }
