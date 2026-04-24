@@ -38,6 +38,12 @@ impl<R: Rng + CryptoRng> Framework<R> {
         self.machine.states[self.runtime.state].trans_probs.as_ref()
     }
 
+    /// Peeks the [`Instant`] of the soonest scheduled [`TimedAction`] in the [`MachineRuntime`]s
+    /// [`TimedQueue`]s.
+    pub fn peek_soonest_scheduled_instant(&self) -> Option<Instant> {
+        self.runtime.peek_soonest_scheduled_instant()
+    }
+
     /// Perform the given [`FrameworkAction`].
     fn perform_action(&mut self, action: FrameworkAction, now: Instant) {
         match action {

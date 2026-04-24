@@ -354,6 +354,14 @@ impl MachineRuntime {
 
         actions.into_boxed_slice()
     }
+
+    /// Peeks the soonest [`Instant`] in the [`TimedQueue`]s.
+    pub fn peek_soonest_scheduled_instant(&self) -> Option<Instant> {
+        self.queues
+            .iter()
+            .filter_map(TimedQueue::peek_soonest_instant)
+            .min()
+    }
 }
 
 #[cfg(test)]
