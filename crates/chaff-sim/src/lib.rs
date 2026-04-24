@@ -159,6 +159,35 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         self.trace = trace;
     }
 
+    /// Get the next earliest "event" time (in the sense that something needs to be handled at that
+    /// time). Will return [`Some(0)`] if the framework hasn't done its initial process yet.
+    fn next_earliest_time(&self, block_state: &BlockState, base_instant: Instant) -> Option<u64> {
+        if !self.framework.is_initialised() {
+            return Some(0);
+        }
+
+        let mut candidate: Option<u64> = self.queue.peek_time();
+
+        // block release
+        if let Some(until) = block_state.until {
+            candidate = candidate.map_or(Some(until), |curr| Some(curr.min(until)));
+        }
+
+        // framework runtime
+        if let Some(runtime_inst) = self.framework.peek_soonest_scheduled_instant() {
+            let runtime_ts = if runtime_inst <= base_instant {
+                0u64
+            } else {
+                let micros128 = runtime_inst.duration_since(base_instant).as_micros();
+                micros128.try_into().unwrap_or(u64::MAX)
+            };
+
+            candidate = candidate.map_or(Some(runtime_ts), |curr| Some(curr.min(runtime_ts)));
+        }
+
+        candidate
+    }
+
     /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
     /// [`Trace`].
     pub fn run(&mut self) -> Trace {
@@ -167,50 +196,54 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         let mut out_builder = TraceBuilder::default();
         let base_instant = Instant::now();
 
-        loop {
-            if let Some(until) = block_state.until
-                && self.queue.peek_time().is_none_or(|t| until <= t)
-            {
-                self.queue.extend(block_state.release(until));
+        while let Some(sim_now) = self.next_earliest_time(&block_state, base_instant) {
+            if block_state.until.is_some_and(|until| until <= sim_now) {
+                self.queue.extend(block_state.release(sim_now));
             }
 
-            let Some(event) = self.queue.pop() else { break };
-            let sim_now = event.time;
-
-            if event.event == Event::SendNormal && block_state.is_active_at(sim_now) {
-                block_state.buffer(event);
-                continue;
+            let mut events_now = Vec::new();
+            while self.queue.peek_time().is_some_and(|t| t == sim_now) {
+                if let Some(event) = self.queue.pop() {
+                    events_now.push(event);
+                }
             }
 
-            if !event.event.is_deferred()
-                && let Ok(direction) = Direction::try_from(event.event)
-            {
-                out_builder.record(direction, sim_now, event.size);
+            let mut buffered_events = Vec::with_capacity(events_now.len());
+            for event in &events_now {
+                if event.event == Event::SendNormal && block_state.is_active_at(event.time) {
+                    block_state.buffer(event.clone());
+                    continue;
+                }
+
+                if !event.event.is_deferred()
+                    && let Ok(direction) = Direction::try_from(event.event)
+                {
+                    out_builder.record(direction, sim_now, event.size);
+                }
+
+                buffered_events.push(event.event);
             }
 
             let sim_instant = base_instant + Duration::from_micros(sim_now);
-            let actions = self.framework.process(&[event.event], sim_instant);
+            let actions = self.framework.process(&buffered_events, sim_instant);
 
-            for action in actions {
-                match action {
-                    IntegratorAction::SendDecoy => {
-                        // TODO: size configuration in machines
-                        self.queue.push(SimulatorEvent {
-                            event: Event::SendDecoy,
-                            time: sim_now,
-                            size: 512,
-                        });
-                    }
-                    IntegratorAction::BlockOutgoing(duration) => {
-                        #[expect(clippy::cast_possible_truncation)]
-                        let end_ts = sim_now + duration.sample(&mut self.rng).as_micros() as u64;
-                        block_state.block(end_ts);
-                    }
-                    IntegratorAction::ReleaseBlock => {
-                        self.queue.extend(block_state.release(sim_now));
-                    }
+            actions.into_iter().for_each(|action| match action {
+                IntegratorAction::SendDecoy => {
+                    self.queue.push(SimulatorEvent {
+                        event: Event::SendDecoy,
+                        time: sim_now,
+                        size: 512,
+                    });
                 }
-            }
+                IntegratorAction::BlockOutgoing(duration) => {
+                    #[expect(clippy::cast_possible_truncation)]
+                    let end_ts = sim_now + duration.sample(&mut self.rng).as_micros() as u64;
+                    block_state.block(end_ts);
+                }
+                IntegratorAction::ReleaseBlock => {
+                    self.queue.extend(block_state.release(sim_now));
+                }
+            });
         }
 
         out_builder.build()
@@ -220,11 +253,12 @@ impl<R: Rng + CryptoRng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, time::Duration};
 
     use chacha20::ChaCha20Rng;
     use chaff::{
-        distr::DistrKind,
+        action::{FrameworkAction, IntegratorAction},
+        distr::{Distr, DistrKind},
         machine,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -594,4 +628,193 @@ mod tests {
         sim.replace_trace(trace_1.clone());
         assert_eq!(sim.trace, trace_1);
     }
+
+    #[test]
+    fn test_simulator_handles_runtime_action_between_packets() {
+        // machine should immediately schedule a decoy for 1s in advance
+        let delay_secs = Duration::from_secs(1).as_secs_f64();
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(delay_secs).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        // sandwich the scheduled decoy
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 2_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0s
+        // send@1s
+        // recv@2s
+        assert_eq!(out.directions.len(), 3, "expected decoy");
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Receive);
+
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 1_000_000, "expected decoy");
+        assert_eq!(out.timing_deltas[2], 1_000_000);
+    }
+
+    #[test]
+    fn test_zero_delay_runtime_schedule_processed_same_instant() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(0.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 1_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0 (from trace)
+        // send@0 (decoy from machine scheduled)
+        // recv@1s (from trace)
+        assert_eq!(out.directions.len(), 3);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Receive);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 0);
+        assert_eq!(out.timing_deltas[2], 1_000_000);
+    }
+
+    #[test]
+    fn test_runtime_scheduled_at_same_time_as_trace_event() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(1.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 1_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // we don't care about order necessarily as the scheduled action and trace should happen at
+        // the same time
+        assert!(out.directions.len() == 3);
+        assert!(out.directions.contains(&Direction::Receive));
+        assert!(out.directions.contains(&Direction::Send));
+        assert_eq!(out.timing_deltas[1], 1_000_000);
+        assert_eq!(out.timing_deltas[2], 0);
+    }
+
+    #[test]
+    fn test_multiple_runtime_actions_same_instant() {
+        let delay: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
+        let machine = machine! {
+            queues: [None; 2],
+            state init {
+                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, delay),
+                transitions: [Event::ReceiveNormal => schedule_second]
+            },
+            state schedule_second {
+                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, delay),
+            },
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 2_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0 (from trace)
+        // send@1s (from either init or schedule_second)
+        // send@1s (same as above)
+        // recv@2s (from trace)
+        assert_eq!(out.directions.len(), 4);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Send);
+        assert_eq!(out.directions[3], Direction::Receive);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 1_000_000);
+        assert_eq!(out.timing_deltas[2], 0);
+        assert_eq!(out.timing_deltas[3], 1_000_000);
+    }
+
+    #[test]
+    fn test_only_runtime_queued() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(1.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+        let trace = Trace {
+            directions: Box::new([]),
+            timing_deltas: Box::new([]),
+            sizes: Box::new([]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 1);
+        assert_eq!(out.directions[0], Direction::Send);
+        assert_eq!(out.timing_deltas[0], 1_000_000);
+    }
+
+    // TODO: simulator is "perfect" in that it always jumps to the soonest event and an
+    // integrator is not in that they don't know the soonest event. need some way to simulate this
+    // and also the tests for it.
 }

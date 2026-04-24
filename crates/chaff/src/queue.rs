@@ -17,6 +17,12 @@ pub trait Timed {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Scheduled<T: Timed>(pub T);
 
+impl<T: Timed> Scheduled<T> {
+    fn execute_at(&self) -> Instant {
+        self.0.execute_at()
+    }
+}
+
 impl<T: Timed> PartialEq for Scheduled<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0.execute_at() == other.0.execute_at()
@@ -111,6 +117,12 @@ impl<T: Timed> TimedQueue<T> {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
+    }
+
+    /// Peek the soonest [`Instant`] in the queue.
+    #[must_use]
+    pub fn peek_soonest_instant(&self) -> Option<Instant> {
+        self.queue.peek().map(Scheduled::execute_at)
     }
 }
 
