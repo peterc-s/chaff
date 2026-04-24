@@ -29,6 +29,7 @@ pub fn construct_test_machine() -> Machine {
             State::new(None, Some(IntegratorAction::SendDecoy), None),
         ],
         [None],
+        None,
     )
     .expect("Machine contains a transition to a state that doesn't exist.")
 }

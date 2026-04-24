@@ -33,6 +33,16 @@ pub enum Event {
 
     /// The current state budget has been exhausted.
     StateBudgetExhausted,
+
+    /// The machine's budget has been exhausted and cannot recover.
+    MachineBudgetExhausted,
+
+    /// The machine's budget has been reached for now, but could recover (for example, because
+    /// [`crate::machine::MachineDecoyBudget::Proportion`] is being used).
+    MachineBudgetReached,
+
+    /// The machine's budget was previously reached but there is now budget.
+    MachineBudgetRecovered,
 }
 
 impl Event {
@@ -44,6 +54,9 @@ impl Event {
             Self::QueuePopped(_)
             | Self::QueueFull(_)
             | Self::StateBudgetExhausted
+            | Self::MachineBudgetExhausted
+            | Self::MachineBudgetReached
+            | Self::MachineBudgetRecovered
             | Self::QueueEmpty(_) => true,
         }
     }

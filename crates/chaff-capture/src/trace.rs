@@ -30,6 +30,9 @@ impl TryFrom<Event> for Direction {
             Event::QueuePopped(_)
             | Event::QueueFull(_)
             | Event::StateBudgetExhausted
+            | Event::MachineBudgetExhausted
+            | Event::MachineBudgetReached
+            | Event::MachineBudgetRecovered
             | Event::QueueEmpty(_) => Err(CaptureError::CantConvert),
         }
     }

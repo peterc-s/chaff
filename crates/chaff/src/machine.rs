@@ -10,6 +10,20 @@ use crate::{
     state::State,
 };
 
+/// Represents a [`Machine`]s decoy budget.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MachineDecoyBudget {
+    /// Machine can only send up to this many decoy packets before getting limited.
+    Absolute(usize),
+
+    /// Machine can only send this proportion of real traffic as decoys before getting limited.
+    Proportion(f64),
+}
+
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
 #[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize))]
@@ -17,6 +31,7 @@ use crate::{
 pub struct Machine {
     pub(crate) states: Vec<State>,
     pub(crate) queues: Vec<Option<usize>>,
+    pub(crate) budget: Option<MachineDecoyBudget>,
 }
 
 impl Machine {
@@ -28,7 +43,11 @@ impl Machine {
     ///
     /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
     /// which should be safe because of a prior bounds check.
-    fn validate(states: &[State], queues: usize) -> Result<(), ValidationError> {
+    fn validate(
+        states: &[State],
+        queues: usize,
+        budget: Option<MachineDecoyBudget>,
+    ) -> Result<(), ValidationError> {
         let Ok(queues) = u8::try_from(queues) else {
             return Err(ValidationError::TooManyQueues(queues));
         };
@@ -80,6 +99,13 @@ impl Machine {
             ));
         }
 
+        // don't allow negative percent decoy budgets
+        if let Some(MachineDecoyBudget::Proportion(percent)) = budget
+            && percent < 0.0
+        {
+            errors.push(ValidationError::NegativeProportion(percent));
+        }
+
         #[expect(clippy::expect_used)]
         match errors.len() {
             0 => Ok(()),
@@ -101,11 +127,16 @@ impl Machine {
     pub fn try_new(
         states: impl Into<Vec<State>>,
         queues: impl Into<Vec<Option<usize>>>,
+        budget: Option<MachineDecoyBudget>,
     ) -> Result<Self, ValidationError> {
         let queues = queues.into();
         let states = states.into();
-        Self::validate(&states, queues.len())?;
-        Ok(Self { states, queues })
+        Self::validate(&states, queues.len(), budget)?;
+        Ok(Self {
+            states,
+            queues,
+            budget,
+        })
     }
 }
 
@@ -114,12 +145,18 @@ impl borsh::BorshDeserialize for Machine {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let states: Vec<State> = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let queues: Vec<Option<usize>> = borsh::BorshDeserialize::deserialize_reader(reader)?;
+        let budget: Option<MachineDecoyBudget> =
+            borsh::BorshDeserialize::deserialize_reader(reader)?;
 
-        Self::validate(&states, queues.len()).map_err(|err| {
+        Self::validate(&states, queues.len(), budget).map_err(|err| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
         })?;
 
-        Ok(Self { states, queues })
+        Ok(Self {
+            states,
+            queues,
+            budget,
+        })
     }
 }
 
@@ -245,6 +282,7 @@ macro_rules! machine {
 
     (
         queues: $queues:expr,
+        budget: $budget:expr,
         $(
             state $name:ident {
                 $($body:tt)*
@@ -293,7 +331,7 @@ macro_rules! machine {
             )*
 
             // build the machine
-            $crate::machine::Machine::try_new(states, $queues)
+            $crate::machine::Machine::try_new(states, $queues, $budget)
         })()
     }};
 }
@@ -312,11 +350,20 @@ pub struct MachineRuntime {
     pub(crate) deferred_events: Vec<Event>,
 
     /// Current state budget.
-    pub(crate) current_budget: Option<usize>,
+    pub(crate) current_state_budget: Option<usize>,
 
     /// If the machine has been used at all yet. Used for checking if the initial state's action has
     /// been processed or sent to the integrator.
     pub(crate) initialised: bool,
+
+    /// Total decoy packets sent.
+    pub(crate) decoys_sent: usize,
+
+    /// Total real packets sent.
+    pub(crate) real_sent: usize,
+
+    /// If the budget is proportional and has currently been reached.
+    pub(crate) proportion_blocked: bool,
 }
 
 impl MachineRuntime {
@@ -332,8 +379,11 @@ impl MachineRuntime {
             state: 0,
             queues,
             deferred_events: vec![],
-            current_budget: m.states.first().and_then(|state| state.decoy_budget),
+            current_state_budget: m.states.first().and_then(|state| state.decoy_budget),
             initialised: false,
+            decoys_sent: 0,
+            real_sent: 0,
+            proportion_blocked: false,
         }
     }
 
@@ -390,6 +440,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
+            None,
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
@@ -404,6 +455,7 @@ mod tests {
     fn test_pop_queues_with_data() {
         let machine = machine! {
             queues: [None],
+            budget: None,
             state init {}
         }
         .unwrap();
@@ -433,6 +485,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
+            None,
         );
 
         match machine {
@@ -469,6 +522,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         assert!(machine.is_ok());
@@ -500,6 +554,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         let invalid_queues = vec![2, 3];
@@ -541,6 +596,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         match machine {
@@ -555,7 +611,7 @@ mod tests {
     #[test]
     fn test_too_many_queues() {
         const U8_MAX_PLUS_ONE: usize = u8::MAX as usize + 1;
-        let err = Machine::try_new([], [None; U8_MAX_PLUS_ONE]);
+        let err = Machine::try_new([], [None; U8_MAX_PLUS_ONE], None);
         assert!(matches!(
             err,
             Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
@@ -566,6 +622,7 @@ mod tests {
     fn test_no_states_validation() {
         let err = machine! {
             queues: [],
+            budget: None,
         };
 
         assert!(matches!(err, Err(ValidationError::NoStates)));
@@ -587,6 +644,7 @@ mod tests {
         fn test_borsh_machine_round_trip() {
             let machine = machine! {
                 queues: [Some(4), None],
+                budget: None,
 
                 state init {
                     action: IntegratorAction::SendDecoy,
