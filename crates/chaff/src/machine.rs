@@ -169,13 +169,13 @@ impl borsh::BorshDeserialize for Machine {
 ///     machine,
 ///     action::{Action, IntegratorAction},
 ///     event::Event,
-///     machine::Machine,
+///     machine::{Machine, MachineDecoyBudget},
 ///     state::{State, TransitionProbs}
 /// };
 ///
 /// let machine_macro = machine! {
 ///     queues: [],
-///     budget: Proportion(0.5)
+///     budget: Proportion(0.5),
 ///     
 ///     state init {
 ///         action: IntegratorAction::SendDecoy,

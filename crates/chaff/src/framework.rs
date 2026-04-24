@@ -101,6 +101,7 @@ impl<R: Rng + CryptoRng> Framework<R> {
                             return false;
                         }
 
+                        #[expect(clippy::cast_precision_loss)]
                         #[expect(clippy::cast_possible_truncation)]
                         #[expect(clippy::cast_sign_loss)]
                         let allowed = (proportion * self.runtime.real_sent as f64).ceil() as usize;
@@ -166,6 +167,7 @@ impl<R: Rng + CryptoRng> Framework<R> {
             if *event == Event::SendNormal {
                 self.runtime.real_sent += 1;
                 if let Some(MachineDecoyBudget::Proportion(proportion)) = &self.machine.budget {
+                    #[expect(clippy::cast_precision_loss)]
                     #[expect(clippy::cast_possible_truncation)]
                     #[expect(clippy::cast_sign_loss)]
                     let allowed = (proportion * self.runtime.real_sent as f64).ceil() as usize;
