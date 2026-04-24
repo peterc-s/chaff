@@ -159,7 +159,13 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         self.trace = trace;
     }
 
+    /// Get the next earliest "event" time (in the sense that something needs to be handled at that
+    /// time). Will return [`Some(0)`] if the framework hasn't done its initial process yet.
     fn next_earliest_time(&self, block_state: &BlockState, base_instant: Instant) -> Option<u64> {
+        if !self.framework.is_initialised() {
+            return Some(0);
+        }
+
         let mut candidate: Option<u64> = self.queue.peek_time();
 
         // block release
@@ -777,6 +783,35 @@ mod tests {
         assert_eq!(out.timing_deltas[1], 1_000_000);
         assert_eq!(out.timing_deltas[2], 0);
         assert_eq!(out.timing_deltas[3], 1_000_000);
+    }
+
+    #[test]
+    fn test_only_runtime_queued() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(1.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+        let trace = Trace {
+            directions: Box::new([]),
+            timing_deltas: Box::new([]),
+            sizes: Box::new([]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        assert_eq!(out.directions.len(), 1);
+        assert_eq!(out.directions[0], Direction::Send);
+        assert_eq!(out.timing_deltas[0], 1_000_000);
     }
 
     // TODO: simulator is "perfect" in that it always jumps to the soonest event and an

@@ -44,6 +44,11 @@ impl<R: Rng + CryptoRng> Framework<R> {
         self.runtime.peek_soonest_scheduled_instant()
     }
 
+    /// Checks if the [`MachineRuntime`] has `initialised`.
+    pub fn is_initialised(&self) -> bool {
+        self.runtime.initialised
+    }
+
     /// Perform the given [`FrameworkAction`].
     fn perform_action(&mut self, action: FrameworkAction, now: Instant) {
         match action {
