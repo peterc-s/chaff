@@ -276,7 +276,6 @@ mod tests {
         };
         let machine = machine! {
             queues: [],
-            budget: None,
             state init {},
         }
         .unwrap();
@@ -309,7 +308,6 @@ mod tests {
 
             let machine = machine! {
                 queues: [],
-                budget: None,
                 state init {},
             }
             .unwrap();
@@ -552,7 +550,6 @@ mod tests {
     fn test_simulator_empty_trace() {
         let machine = machine! {
             queues: [],
-            budget: None,
             state init {},
         }
         .unwrap();
@@ -608,7 +605,6 @@ mod tests {
     fn test_simulator_replace_trace() {
         let machine = machine! {
             queues: [],
-            budget: None,
             state dummy {
                 action: IntegratorAction::ReleaseBlock,
             }
@@ -644,7 +640,6 @@ mod tests {
         let delay_secs = Duration::from_secs(1).as_secs_f64();
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
@@ -685,7 +680,6 @@ mod tests {
     fn test_zero_delay_runtime_schedule_processed_same_instant() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
@@ -724,7 +718,6 @@ mod tests {
     fn test_runtime_scheduled_at_same_time_as_trace_event() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
@@ -761,7 +754,6 @@ mod tests {
 
         let machine = machine! {
             queues: [None; 2],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, delay),
                 transitions: [Event::ReceiveNormal => schedule_second]
@@ -802,7 +794,6 @@ mod tests {
     fn test_only_runtime_queued() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,

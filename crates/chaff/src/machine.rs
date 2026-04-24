@@ -175,6 +175,7 @@ impl borsh::BorshDeserialize for Machine {
 ///
 /// let machine_macro = machine! {
 ///     queues: [],
+///     budget: Proportion(0.5)
 ///     
 ///     state init {
 ///         action: IntegratorAction::SendDecoy,
@@ -216,33 +217,10 @@ impl borsh::BorshDeserialize for Machine {
 ///         State::new(None, Some(IntegratorAction::SendDecoy), None)
 ///     ],
 ///     [],
+///     Some(MachineDecoyBudget::Proportion(0.5)),
 /// ).unwrap();
 ///
 /// assert_eq!(machine_macro, machine_manual);
-/// ```
-///
-/// # Compile-Time Errors
-///
-/// The `action:` field is strictly required for every state. Omitting it will cause a compile-time
-/// error.
-///
-/// ```rust,compile_fail
-/// use chaff::{machine, event::Event, action::IntegratorAction};
-///
-/// let machine = machine! {
-///     queues: [],
-///
-///     state missing_action {
-///         transitions: [
-///             Event::SendNormal => end,
-///         ],
-///         budget: 25,
-///     },
-///
-///     state end {
-///         action: IntegratorAction::SendDecoy
-///     }
-/// }
 /// ```
 #[macro_export]
 macro_rules! machine {
@@ -281,6 +259,7 @@ macro_rules! machine {
     (@parse_state $a:ident $t:ident $b:ident) => {};
 
     (
+        @build
         queues: $queues:expr,
         budget: $budget:expr,
         $(
@@ -320,7 +299,7 @@ macro_rules! machine {
                 let mut _probs = ::core::option::Option::None;
                 let mut _budget = ::core::option::Option::None;
 
-                // assign state properties, start with [missing] status as action not found
+                // assign state properties
                 $crate::machine!(@parse_state _action _probs _budget $($body)*);
 
                 states.push($crate::state::State::new(
@@ -334,6 +313,33 @@ macro_rules! machine {
             $crate::machine::Machine::try_new(states, $queues, $budget)
         })()
     }};
+
+    (
+        queues: $queues:expr,
+        budget: $variant:ident ($($args:tt)*),
+        $( state $name:ident { $($body:tt)* } ),* $(,)?
+    ) => {
+        $crate::machine!(
+            @build
+            queues: $queues,
+            budget: ::core::option::Option::Some(
+                $crate::machine::MachineDecoyBudget::$variant($($args)*)
+            ),
+            $( state $name { $($body)* } ),*
+        )
+    };
+
+    (
+        queues: $queues:expr,
+        $( state $name:ident { $($body:tt)* } ),* $(,)?
+    ) => {
+        $crate::machine!(
+            @build
+            queues: $queues,
+            budget: ::core::option::Option::None,
+            $( state $name { $($body)* } ),*
+        )
+    };
 }
 
 /// The runtime for a [`Machine`]. Tracks the current machine state, holds it's [`TimedQueue`]s, and
@@ -455,7 +461,6 @@ mod tests {
     fn test_pop_queues_with_data() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {}
         }
         .unwrap();
@@ -622,7 +627,6 @@ mod tests {
     fn test_no_states_validation() {
         let err = machine! {
             queues: [],
-            budget: None,
         };
 
         assert!(matches!(err, Err(ValidationError::NoStates)));
@@ -632,7 +636,7 @@ mod tests {
     fn test_negative_proportion_validation() {
         let err = machine! {
             queues: [],
-            budget: Some(MachineDecoyBudget::Proportion(-0.1)),
+            budget: Proportion(-0.1),
             state init {},
         };
 
@@ -658,7 +662,7 @@ mod tests {
         fn test_borsh_machine_round_trip() {
             let machine = machine! {
                 queues: [Some(4), None],
-                budget: Some(MachineDecoyBudget::Proportion(0.67)),
+                budget: Proportion(0.67),
 
                 state init {
                     action: IntegratorAction::SendDecoy,

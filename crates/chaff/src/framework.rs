@@ -451,7 +451,6 @@ mod tests {
     fn test_perform_action_schedule() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 transitions: [Event::SendNormal => schedule_decoy],
             },
@@ -625,7 +624,6 @@ mod tests {
     fn test_deferred_queue_popped_event_ordering() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state wait_pop {
                 transitions: [Event::QueuePopped(0) => release],
             },
@@ -675,7 +673,6 @@ mod tests {
     fn test_deferred_events_happen_before_new_events() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: IntegratorAction::SendDecoy,
                 transitions: [Event::QueuePopped(0) => jump],
@@ -735,7 +732,6 @@ mod tests {
         let long_delay = DistrKind::Constant(999.0).try_into().unwrap();
         let machine = machine! {
             queues: [Some(1)],
-            budget: None,
             state init {
                 action: FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
@@ -781,7 +777,6 @@ mod tests {
     fn test_state_budget_exhausted() {
         let machine = machine! {
             queues: [],
-            budget: None,
             state init {
                 action: IntegratorAction::ReleaseBlock,
                 transitions: [Event::SendNormal => decoy_burst],
@@ -814,7 +809,6 @@ mod tests {
     fn test_state_budget_exhausted_via_queue() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 action: IntegratorAction::ReleaseBlock,
                 transitions: [Event::StateBudgetExhausted => end],
@@ -846,7 +840,6 @@ mod tests {
     fn test_state_budget_zero_and_self_transitions() {
         let machine = machine! {
             queues: [],
-            budget: None,
             state init {
                 action: IntegratorAction::ReleaseBlock,
                 transitions: [Event::ReceiveNormal => decoy_burst],
@@ -890,7 +883,6 @@ mod tests {
     fn test_queue_empty() {
         let machine = machine! {
             queues: [Some(2)],
-            budget: None,
             state init {
                 action: IntegratorAction::ReleaseBlock,
                 transitions: [Event::ReceiveNormal => fill_queue],
@@ -946,7 +938,6 @@ mod tests {
     fn test_none_action() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 transitions: [Event::SendNormal => end],
             },
@@ -965,7 +956,6 @@ mod tests {
     fn test_no_transition() {
         let machine = machine! {
             queues: [None],
-            budget: None,
             state init {
                 transitions: [
                     Event::ReceiveNormal => [(end, 0.0)],
@@ -995,7 +985,7 @@ mod tests {
         // attempt to send immediately
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Absolute(1)),
+            budget: Absolute(1),
             state init {
                 action: IntegratorAction::SendDecoy,
             },
@@ -1040,7 +1030,7 @@ mod tests {
     fn test_proportion_block_when_no_real_and_recovery() {
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Proportion(0.5)),
+            budget: Proportion(0.5),
             state init {
                 action: IntegratorAction::SendDecoy,
             },
@@ -1094,7 +1084,7 @@ mod tests {
     fn test_state_budget_not_consumed_when_machine_blocks() {
         let machine = machine! {
             queues: [],
-            budget: Some(MachineDecoyBudget::Absolute(0)),
+            budget: Absolute(0),
             state init {
                 action: IntegratorAction::SendDecoy,
                 budget: 1
@@ -1128,7 +1118,7 @@ mod tests {
     fn test_proportion_block_immediate_via_queue() {
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Proportion(0.3)),
+            budget: Proportion(0.3),
             state init {},
         }
         .unwrap();
@@ -1156,7 +1146,7 @@ mod tests {
     fn test_proportion_allowed_boundary_and_blocking() {
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Proportion(0.5)),
+            budget: Proportion(0.5),
             state init {},
         }
         .unwrap();
@@ -1208,7 +1198,7 @@ mod tests {
     fn test_machine_exhausted_event_is_emitted_only_once_for_absolute() {
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Absolute(1)),
+            budget: Absolute(1),
             state init {
                 action: IntegratorAction::SendDecoy,
             }
@@ -1240,7 +1230,7 @@ mod tests {
     fn test_proportion_budget_reached_emitted_only_once_when_over_budget() {
         let machine = machine! {
             queues: [None],
-            budget: Some(MachineDecoyBudget::Proportion(0.5)),
+            budget: Proportion(0.5),
             state init {},
         }
         .unwrap();
