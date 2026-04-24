@@ -628,6 +628,20 @@ mod tests {
         assert!(matches!(err, Err(ValidationError::NoStates)));
     }
 
+    #[test]
+    fn test_negative_proportion_validation() {
+        let err = machine! {
+            queues: [],
+            budget: Some(MachineDecoyBudget::Proportion(-0.1)),
+            state init {},
+        };
+
+        assert!(matches!(
+            err,
+            Err(ValidationError::NegativeProportion(-0.1))
+        ));
+    }
+
     #[cfg(feature = "borsh")]
     mod borsh {
         use super::*;
@@ -644,7 +658,7 @@ mod tests {
         fn test_borsh_machine_round_trip() {
             let machine = machine! {
                 queues: [Some(4), None],
-                budget: None,
+                budget: Some(MachineDecoyBudget::Proportion(0.67)),
 
                 state init {
                     action: IntegratorAction::SendDecoy,
@@ -772,6 +786,20 @@ mod tests {
         fn test_borsh_machine_bad_distr_params() {
             let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             path.push("test-machines/corrupt-distr.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn test_borsh_machine_negative_proportion() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/negative-proportion-budget.machine");
 
             let mut file = File::open(path).unwrap();
             let err = Machine::deserialize_reader(&mut file);

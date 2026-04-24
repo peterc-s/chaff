@@ -1200,11 +1200,12 @@ mod tests {
         });
 
         let actions = framework.process(&[], now);
-        assert!(!actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(actions.len(), 0);
+        assert!(framework.runtime.proportion_blocked);
     }
 
     #[test]
-    fn test_machine_exhausted_event_is_emitted_once_only_for_absolute() {
+    fn test_machine_exhausted_event_is_emitted_only_once_for_absolute() {
         let machine = machine! {
             queues: [None],
             budget: Some(MachineDecoyBudget::Absolute(1)),
@@ -1233,5 +1234,82 @@ mod tests {
                     .contains(&Event::MachineBudgetExhausted)
             );
         }
+    }
+
+    #[test]
+    fn test_proportion_budget_reached_emitted_only_once_when_over_budget() {
+        let machine = machine! {
+            queues: [None],
+            budget: Some(MachineDecoyBudget::Proportion(0.5)),
+            state init {},
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+
+        framework.process(&[Event::SendNormal; 2], now);
+        assert_eq!(framework.runtime.real_sent, 2);
+        assert!(!framework.runtime.proportion_blocked);
+
+        // send allowed decoy
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(framework.runtime.proportion_blocked);
+
+        // drain deferred events
+        let _ = framework.process(&[], now);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+
+        // force reset proportion_blocked and send a decoy
+        framework.runtime.proportion_blocked = false;
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(framework.runtime.proportion_blocked);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached),
+        );
+
+        // drain deferred events
+        let _ = framework.process(&[], now);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+
+        // send another decoy
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached),
+        );
     }
 }
