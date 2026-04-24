@@ -220,10 +220,11 @@ impl<R: Rng + CryptoRng> Simulator<R> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, time::Duration};
 
     use chacha20::ChaCha20Rng;
     use chaff::{
+        action::{FrameworkAction, IntegratorAction},
         distr::DistrKind,
         machine,
         machine::Machine,
@@ -593,5 +594,47 @@ mod tests {
 
         sim.replace_trace(trace_1.clone());
         assert_eq!(sim.trace, trace_1);
+    }
+
+    #[test]
+    fn test_simulator_handles_runtime_action_between_packets() {
+        // machine should immediately schedule a decoy for 1s in advance
+        let delay_secs = Duration::from_secs(1).as_secs_f64();
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(delay_secs).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        // sandwich the scheduled decoy
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 2_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0s
+        // send@1s
+        // recv@2s
+        assert_eq!(out.directions.len(), 3, "expected decoy");
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Receive);
+
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 1_000_000, "expected decoy");
+        assert_eq!(out.timing_deltas[2], 1_000_000);
     }
 }
