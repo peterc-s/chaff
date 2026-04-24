@@ -252,7 +252,7 @@ mod tests {
     use chacha20::ChaCha20Rng;
     use chaff::{
         action::{FrameworkAction, IntegratorAction},
-        distr::DistrKind,
+        distr::{Distr, DistrKind},
         machine,
         machine::Machine,
         state::{State, TransitionProbs},
@@ -664,4 +664,122 @@ mod tests {
         assert_eq!(out.timing_deltas[1], 1_000_000, "expected decoy");
         assert_eq!(out.timing_deltas[2], 1_000_000);
     }
+
+    #[test]
+    fn test_zero_delay_runtime_schedule_processed_same_instant() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(0.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 1_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0 (from trace)
+        // send@0 (decoy from machine scheduled)
+        // recv@1s (from trace)
+        assert_eq!(out.directions.len(), 3);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Receive);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 0);
+        assert_eq!(out.timing_deltas[2], 1_000_000);
+    }
+
+    #[test]
+    fn test_runtime_scheduled_at_same_time_as_trace_event() {
+        let machine = machine! {
+            queues: [None],
+            state init {
+                action: FrameworkAction::schedule(
+                    IntegratorAction::SendDecoy,
+                    0,
+                    DistrKind::Constant(1.0).try_into().unwrap()
+                ),
+            }
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 1_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // we don't care about order necessarily as the scheduled action and trace should happen at
+        // the same time
+        assert!(out.directions.len() == 3);
+        assert!(out.directions.contains(&Direction::Receive));
+        assert!(out.directions.contains(&Direction::Send));
+        assert_eq!(out.timing_deltas[1], 1_000_000);
+        assert_eq!(out.timing_deltas[2], 0);
+    }
+
+    #[test]
+    fn test_multiple_runtime_actions_same_instant() {
+        let delay: Distr = DistrKind::Constant(1.0).try_into().unwrap();
+
+        let machine = machine! {
+            queues: [None; 2],
+            state init {
+                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, delay),
+                transitions: [Event::ReceiveNormal => schedule_second]
+            },
+            state schedule_second {
+                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, delay),
+            },
+        }
+        .unwrap();
+
+        let framework = Framework::new(machine, rand::rng());
+        let trace = Trace {
+            directions: Box::new([Direction::Receive, Direction::Receive]),
+            timing_deltas: Box::new([0, 2_000_000]),
+            sizes: Box::new([100, 100]),
+        };
+
+        let mut sim = Simulator::with(framework, trace, rand::rng());
+        let out = sim.run();
+
+        // expected:
+        // recv@0 (from trace)
+        // send@1s (from either init or schedule_second)
+        // send@1s (same as above)
+        // recv@2s (from trace)
+        assert_eq!(out.directions.len(), 4);
+        assert_eq!(out.directions[0], Direction::Receive);
+        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.directions[2], Direction::Send);
+        assert_eq!(out.directions[3], Direction::Receive);
+        assert_eq!(out.timing_deltas[0], 0);
+        assert_eq!(out.timing_deltas[1], 1_000_000);
+        assert_eq!(out.timing_deltas[2], 0);
+        assert_eq!(out.timing_deltas[3], 1_000_000);
+    }
+
+    // TODO: simulator is "perfect" in that it always jumps to the soonest event and an
+    // integrator is not in that they don't know the soonest event. need some way to simulate this
+    // and also the tests for it.
 }
