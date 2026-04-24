@@ -31,17 +31,17 @@ pub enum Event {
     /// Given queue has emptied. Emitted by framework.
     QueueEmpty(u8),
 
-    /// The current state budget has been exhausted.
+    /// The current state budget has been exhausted. Emitted by framework.
     StateBudgetExhausted,
 
-    /// The machine's budget has been exhausted and cannot recover.
+    /// The machine's budget has been exhausted and cannot recover. Emitted by framework.
     MachineBudgetExhausted,
 
     /// The machine's budget has been reached for now, but could recover (for example, because
-    /// [`crate::machine::MachineDecoyBudget::Proportion`] is being used).
+    /// [`crate::machine::MachineDecoyBudget::Proportion`] is being used). Emitted by framework.
     MachineBudgetReached,
 
-    /// The machine's budget was previously reached but there is now budget.
+    /// The machine's budget was previously reached but there is now budget. Emitted by framework.
     MachineBudgetRecovered,
 }
 
