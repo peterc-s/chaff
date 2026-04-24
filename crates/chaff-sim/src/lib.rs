@@ -191,7 +191,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         let base_instant = Instant::now();
 
         while let Some(sim_now) = self.next_earliest_time(&block_state, base_instant) {
-            if block_state.until.is_some_and(|until| until < sim_now) {
+            if block_state.until.is_some_and(|until| until <= sim_now) {
                 self.queue.extend(block_state.release(sim_now));
             }
 
@@ -221,28 +221,23 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             let sim_instant = base_instant + Duration::from_micros(sim_now);
             let actions = self.framework.process(&buffered_events, sim_instant);
 
-            while !actions.is_empty() {
-                for action in &actions {
-                    match action {
-                        IntegratorAction::SendDecoy => {
-                            self.queue.push(SimulatorEvent {
-                                event: Event::SendDecoy,
-                                time: sim_now,
-                                size: 512,
-                            });
-                        }
-                        IntegratorAction::BlockOutgoing(duration) => {
-                            #[expect(clippy::cast_possible_truncation)]
-                            let end_ts =
-                                sim_now + duration.sample(&mut self.rng).as_micros() as u64;
-                            block_state.block(end_ts);
-                        }
-                        IntegratorAction::ReleaseBlock => {
-                            self.queue.extend(block_state.release(sim_now));
-                        }
-                    }
+            actions.into_iter().for_each(|action| match action {
+                IntegratorAction::SendDecoy => {
+                    self.queue.push(SimulatorEvent {
+                        event: Event::SendDecoy,
+                        time: sim_now,
+                        size: 512,
+                    });
                 }
-            }
+                IntegratorAction::BlockOutgoing(duration) => {
+                    #[expect(clippy::cast_possible_truncation)]
+                    let end_ts = sim_now + duration.sample(&mut self.rng).as_micros() as u64;
+                    block_state.block(end_ts);
+                }
+                IntegratorAction::ReleaseBlock => {
+                    self.queue.extend(block_state.release(sim_now));
+                }
+            });
         }
 
         out_builder.build()
