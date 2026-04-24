@@ -10,6 +10,20 @@ use crate::{
     state::State,
 };
 
+/// Represents a [`Machine`]s decoy budget.
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MachineDecoyBudget {
+    /// Machine can only send up to this many decoy packets before getting limited.
+    Absolute(usize),
+
+    /// Machine can only send this proportion of real traffic as decoys before getting limited.
+    Proportion(f64),
+}
+
 /// The Chaff machine specification. Represents a queue automata with [`State`]s and
 /// [`TimedQueue`]s.
 #[cfg_attr(feature = "borsh", derive(borsh::BorshSerialize))]
@@ -17,6 +31,7 @@ use crate::{
 pub struct Machine {
     pub(crate) states: Vec<State>,
     pub(crate) queues: Vec<Option<usize>>,
+    pub(crate) budget: Option<MachineDecoyBudget>,
 }
 
 impl Machine {
@@ -28,7 +43,11 @@ impl Machine {
     ///
     /// This should not panic under any normal circumstances. This method contains a [`Result::expect`]
     /// which should be safe because of a prior bounds check.
-    fn validate(states: &[State], queues: usize) -> Result<(), ValidationError> {
+    fn validate(
+        states: &[State],
+        queues: usize,
+        budget: Option<MachineDecoyBudget>,
+    ) -> Result<(), ValidationError> {
         let Ok(queues) = u8::try_from(queues) else {
             return Err(ValidationError::TooManyQueues(queues));
         };
@@ -80,6 +99,13 @@ impl Machine {
             ));
         }
 
+        // don't allow negative percent decoy budgets
+        if let Some(MachineDecoyBudget::Proportion(percent)) = budget
+            && percent < 0.0
+        {
+            errors.push(ValidationError::NegativeProportion(percent));
+        }
+
         #[expect(clippy::expect_used)]
         match errors.len() {
             0 => Ok(()),
@@ -101,11 +127,16 @@ impl Machine {
     pub fn try_new(
         states: impl Into<Vec<State>>,
         queues: impl Into<Vec<Option<usize>>>,
+        budget: Option<MachineDecoyBudget>,
     ) -> Result<Self, ValidationError> {
         let queues = queues.into();
         let states = states.into();
-        Self::validate(&states, queues.len())?;
-        Ok(Self { states, queues })
+        Self::validate(&states, queues.len(), budget)?;
+        Ok(Self {
+            states,
+            queues,
+            budget,
+        })
     }
 }
 
@@ -114,12 +145,18 @@ impl borsh::BorshDeserialize for Machine {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let states: Vec<State> = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let queues: Vec<Option<usize>> = borsh::BorshDeserialize::deserialize_reader(reader)?;
+        let budget: Option<MachineDecoyBudget> =
+            borsh::BorshDeserialize::deserialize_reader(reader)?;
 
-        Self::validate(&states, queues.len()).map_err(|err| {
+        Self::validate(&states, queues.len(), budget).map_err(|err| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
         })?;
 
-        Ok(Self { states, queues })
+        Ok(Self {
+            states,
+            queues,
+            budget,
+        })
     }
 }
 
@@ -132,12 +169,13 @@ impl borsh::BorshDeserialize for Machine {
 ///     machine,
 ///     action::{Action, IntegratorAction},
 ///     event::Event,
-///     machine::Machine,
+///     machine::{Machine, MachineDecoyBudget},
 ///     state::{State, TransitionProbs}
 /// };
 ///
 /// let machine_macro = machine! {
 ///     queues: [],
+///     budget: Proportion(0.5),
 ///     
 ///     state init {
 ///         action: IntegratorAction::SendDecoy,
@@ -179,33 +217,10 @@ impl borsh::BorshDeserialize for Machine {
 ///         State::new(None, Some(IntegratorAction::SendDecoy), None)
 ///     ],
 ///     [],
+///     Some(MachineDecoyBudget::Proportion(0.5)),
 /// ).unwrap();
 ///
 /// assert_eq!(machine_macro, machine_manual);
-/// ```
-///
-/// # Compile-Time Errors
-///
-/// The `action:` field is strictly required for every state. Omitting it will cause a compile-time
-/// error.
-///
-/// ```rust,compile_fail
-/// use chaff::{machine, event::Event, action::IntegratorAction};
-///
-/// let machine = machine! {
-///     queues: [],
-///
-///     state missing_action {
-///         transitions: [
-///             Event::SendNormal => end,
-///         ],
-///         budget: 25,
-///     },
-///
-///     state end {
-///         action: IntegratorAction::SendDecoy
-///     }
-/// }
 /// ```
 #[macro_export]
 macro_rules! machine {
@@ -244,7 +259,9 @@ macro_rules! machine {
     (@parse_state $a:ident $t:ident $b:ident) => {};
 
     (
+        @build
         queues: $queues:expr,
+        budget: $budget:expr,
         $(
             state $name:ident {
                 $($body:tt)*
@@ -282,7 +299,7 @@ macro_rules! machine {
                 let mut _probs = ::core::option::Option::None;
                 let mut _budget = ::core::option::Option::None;
 
-                // assign state properties, start with [missing] status as action not found
+                // assign state properties
                 $crate::machine!(@parse_state _action _probs _budget $($body)*);
 
                 states.push($crate::state::State::new(
@@ -293,9 +310,36 @@ macro_rules! machine {
             )*
 
             // build the machine
-            $crate::machine::Machine::try_new(states, $queues)
+            $crate::machine::Machine::try_new(states, $queues, $budget)
         })()
     }};
+
+    (
+        queues: $queues:expr,
+        budget: $variant:ident ($($args:tt)*),
+        $( state $name:ident { $($body:tt)* } ),* $(,)?
+    ) => {
+        $crate::machine!(
+            @build
+            queues: $queues,
+            budget: ::core::option::Option::Some(
+                $crate::machine::MachineDecoyBudget::$variant($($args)*)
+            ),
+            $( state $name { $($body)* } ),*
+        )
+    };
+
+    (
+        queues: $queues:expr,
+        $( state $name:ident { $($body:tt)* } ),* $(,)?
+    ) => {
+        $crate::machine!(
+            @build
+            queues: $queues,
+            budget: ::core::option::Option::None,
+            $( state $name { $($body)* } ),*
+        )
+    };
 }
 
 /// The runtime for a [`Machine`]. Tracks the current machine state, holds it's [`TimedQueue`]s, and
@@ -312,11 +356,20 @@ pub struct MachineRuntime {
     pub(crate) deferred_events: Vec<Event>,
 
     /// Current state budget.
-    pub(crate) current_budget: Option<usize>,
+    pub(crate) current_state_budget: Option<usize>,
 
     /// If the machine has been used at all yet. Used for checking if the initial state's action has
     /// been processed or sent to the integrator.
     pub(crate) initialised: bool,
+
+    /// Total decoy packets sent.
+    pub(crate) decoys_sent: usize,
+
+    /// Total real packets sent.
+    pub(crate) real_sent: usize,
+
+    /// If the budget is proportional and has currently been reached.
+    pub(crate) proportion_blocked: bool,
 }
 
 impl MachineRuntime {
@@ -332,8 +385,11 @@ impl MachineRuntime {
             state: 0,
             queues,
             deferred_events: vec![],
-            current_budget: m.states.first().and_then(|state| state.decoy_budget),
+            current_state_budget: m.states.first().and_then(|state| state.decoy_budget),
             initialised: false,
+            decoys_sent: 0,
+            real_sent: 0,
+            proportion_blocked: false,
         }
     }
 
@@ -390,6 +446,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
+            None,
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
@@ -433,6 +490,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [None; 42],
+            None,
         );
 
         match machine {
@@ -469,6 +527,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         assert!(machine.is_ok());
@@ -500,6 +559,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         let invalid_queues = vec![2, 3];
@@ -541,6 +601,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         );
 
         match machine {
@@ -555,7 +616,7 @@ mod tests {
     #[test]
     fn test_too_many_queues() {
         const U8_MAX_PLUS_ONE: usize = u8::MAX as usize + 1;
-        let err = Machine::try_new([], [None; U8_MAX_PLUS_ONE]);
+        let err = Machine::try_new([], [None; U8_MAX_PLUS_ONE], None);
         assert!(matches!(
             err,
             Err(ValidationError::TooManyQueues(U8_MAX_PLUS_ONE))
@@ -569,6 +630,20 @@ mod tests {
         };
 
         assert!(matches!(err, Err(ValidationError::NoStates)));
+    }
+
+    #[test]
+    fn test_negative_proportion_validation() {
+        let err = machine! {
+            queues: [],
+            budget: Proportion(-0.1),
+            state init {},
+        };
+
+        assert!(matches!(
+            err,
+            Err(ValidationError::NegativeProportion(-0.1))
+        ));
     }
 
     #[cfg(feature = "borsh")]
@@ -587,6 +662,7 @@ mod tests {
         fn test_borsh_machine_round_trip() {
             let machine = machine! {
                 queues: [Some(4), None],
+                budget: Proportion(0.67),
 
                 state init {
                     action: IntegratorAction::SendDecoy,
@@ -714,6 +790,20 @@ mod tests {
         fn test_borsh_machine_bad_distr_params() {
             let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             path.push("test-machines/corrupt-distr.machine");
+
+            let mut file = File::open(path).unwrap();
+            let err = Machine::deserialize_reader(&mut file);
+            match err {
+                Err(ref err) if err.kind() == std::io::ErrorKind::InvalidData => {}
+                Ok(other) => panic!("unexpected result: {other:?}"),
+                Err(other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn test_borsh_machine_negative_proportion() {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("test-machines/negative-proportion-budget.machine");
 
             let mut file = File::open(path).unwrap();
             let err = Machine::deserialize_reader(&mut file);

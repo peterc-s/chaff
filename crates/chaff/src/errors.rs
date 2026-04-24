@@ -53,6 +53,9 @@ pub enum ValidationError {
 
     /// Constructed random distribution from [`rand_distr`] from was invalid.
     InvalidDistr(String),
+
+    /// A percent that was meant to be positive was negative.
+    NegativeProportion(f64),
 }
 
 impl Error for ValidationError {}
@@ -86,6 +89,9 @@ impl fmt::Display for ValidationError {
             Self::MinExceedsMax(err) => write!(f, "minimum exceeds maximum: {err}"),
             Self::NoStates => write!(f, "machines must have at least one state"),
             Self::InvalidDistr(err) => write!(f, "invalid distribution: {err}"),
+            Self::NegativeProportion(percent) => {
+                write!(f, "negative proportion not allowed: {percent}")
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ use rand_distr::Distribution as _;
 use crate::{
     action::{Action, FrameworkAction, IntegratorAction},
     event::Event,
-    machine::{Machine, MachineRuntime},
+    machine::{Machine, MachineDecoyBudget, MachineRuntime},
     queue::{TimedAction, TimedQueue},
     state::TransitionProbs,
 };
@@ -72,10 +72,64 @@ impl<R: Rng + CryptoRng> Framework<R> {
     }
 
     /// Apply the current state's decoy budget to a [`IntegratorAction`], returning `false` if it
-    /// should be suppressed.
+    /// should be suppressed. Machine budget takes precedence over state budget.
     fn apply_budget(&mut self, action: &IntegratorAction) -> bool {
         if matches!(action, IntegratorAction::SendDecoy) {
-            match &mut self.runtime.current_budget {
+            // machine
+            if let Some(budget) = &self.machine.budget {
+                match budget {
+                    MachineDecoyBudget::Absolute(max) => {
+                        if self.runtime.decoys_sent >= *max {
+                            return false;
+                        }
+
+                        if self.runtime.decoys_sent + 1 == *max {
+                            self.runtime
+                                .deferred_events
+                                .push(Event::MachineBudgetExhausted);
+                        }
+                    }
+                    MachineDecoyBudget::Proportion(proportion) => {
+                        // block if no real packets seen yet
+                        if self.runtime.real_sent == 0 {
+                            if !self.runtime.proportion_blocked {
+                                self.runtime
+                                    .deferred_events
+                                    .push(Event::MachineBudgetReached);
+                                self.runtime.proportion_blocked = true;
+                            }
+                            return false;
+                        }
+
+                        #[expect(clippy::cast_precision_loss)]
+                        #[expect(clippy::cast_possible_truncation)]
+                        #[expect(clippy::cast_sign_loss)]
+                        let allowed = (proportion * self.runtime.real_sent as f64).ceil() as usize;
+
+                        // if we're already over the budget then suppress
+                        if self.runtime.decoys_sent >= allowed {
+                            if !self.runtime.proportion_blocked {
+                                self.runtime
+                                    .deferred_events
+                                    .push(Event::MachineBudgetReached);
+                                self.runtime.proportion_blocked = true;
+                            }
+                            return false;
+                        }
+
+                        // if we're just about to hit the budget, then emit an event
+                        if self.runtime.decoys_sent + 1 == allowed {
+                            self.runtime
+                                .deferred_events
+                                .push(Event::MachineBudgetReached);
+                            self.runtime.proportion_blocked = true;
+                        }
+                    }
+                }
+            }
+
+            // state
+            match &mut self.runtime.current_state_budget {
                 Some(budget) if *budget == 0 => return false,
                 Some(budget) => {
                     *budget -= 1;
@@ -87,6 +141,8 @@ impl<R: Rng + CryptoRng> Framework<R> {
                 }
                 None => {}
             }
+
+            self.runtime.decoys_sent += 1;
         }
         true
     }
@@ -107,6 +163,22 @@ impl<R: Rng + CryptoRng> Framework<R> {
         // handle deferred + triggered events
         let prior_deferred = std::mem::take(&mut self.runtime.deferred_events);
         for event in prior_deferred.iter().chain(events) {
+            // handle machine budgeting
+            if *event == Event::SendNormal {
+                self.runtime.real_sent += 1;
+                if let Some(MachineDecoyBudget::Proportion(proportion)) = &self.machine.budget {
+                    #[expect(clippy::cast_precision_loss)]
+                    #[expect(clippy::cast_possible_truncation)]
+                    #[expect(clippy::cast_sign_loss)]
+                    let allowed = (proportion * self.runtime.real_sent as f64).ceil() as usize;
+                    if self.runtime.proportion_blocked && allowed > self.runtime.decoys_sent {
+                        deferred.push(Event::MachineBudgetRecovered);
+                        self.runtime.proportion_blocked = false;
+                    }
+                }
+            }
+
+            // handle transition
             if let Some(new_state) = self.machine.states[self.runtime.state]
                 .trans_probs
                 .as_ref()
@@ -114,8 +186,8 @@ impl<R: Rng + CryptoRng> Framework<R> {
             {
                 if self.runtime.state != new_state {
                     self.runtime.state = new_state;
-                    self.runtime.current_budget = self.machine.states[new_state].decoy_budget;
-                    if self.runtime.current_budget == Some(0) {
+                    self.runtime.current_state_budget = self.machine.states[new_state].decoy_budget;
+                    if self.runtime.current_state_budget == Some(0) {
                         deferred.push(Event::StateBudgetExhausted);
                     }
                 }
@@ -202,6 +274,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [],
+            None,
         )
         .unwrap();
         let framework = Framework::new(machine, rand::rng());
@@ -225,6 +298,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [],
+            None,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -253,6 +327,7 @@ mod tests {
                 State::new(None, Some(FrameworkAction::CancelAll), None),
             ],
             [],
+            None,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -271,6 +346,7 @@ mod tests {
         let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [],
+            None,
         )
         .unwrap();
 
@@ -292,6 +368,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [],
+            None,
         )
         .unwrap();
 
@@ -315,6 +392,7 @@ mod tests {
                 State::new(None, Some(FrameworkAction::CancelAll), None),
             ],
             [None, None],
+            None,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -345,6 +423,7 @@ mod tests {
                 State::new(None, Some(FrameworkAction::CancelQueue(0)), None),
             ],
             [None, None],
+            None,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -420,6 +499,7 @@ mod tests {
                 ),
             ],
             [None],
+            None,
         )
         .unwrap();
 
@@ -442,6 +522,7 @@ mod tests {
         let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [None; 3],
+            None,
         )
         .unwrap();
 
@@ -473,6 +554,7 @@ mod tests {
         let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
             [None, None],
+            None,
         )
         .unwrap();
 
@@ -505,8 +587,12 @@ mod tests {
 
     #[test]
     fn test_perform_action_schedule_via_queue() {
-        let machine =
-            Machine::try_new(vec![State::new(None, None::<Action>, None)], [None, None]).unwrap();
+        let machine = Machine::try_new(
+            vec![State::new(None, None::<Action>, None)],
+            [None, None],
+            None,
+        )
+        .unwrap();
 
         let mut framework = Framework::new(machine, rand::rng());
 
@@ -628,6 +714,7 @@ mod tests {
         let machine = Machine::try_new(
             vec![State::new(None, Some(IntegratorAction::ReleaseBlock), None)],
             [None],
+            None,
         )
         .unwrap();
         let mut framework = Framework::new(machine, rand::rng());
@@ -893,5 +980,328 @@ mod tests {
         assert!(actions.is_empty());
         assert!(framework.runtime.queues[0].queue.is_empty());
         assert_eq!(framework.get_state(), 0);
+    }
+
+    #[test]
+    fn test_absolute_machine_budget_exhaustion_and_suppression() {
+        // attempt to send immediately
+        let machine = machine! {
+            queues: [None],
+            budget: Absolute(1),
+            state init {
+                action: IntegratorAction::SendDecoy,
+            },
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        let actions = framework.process(&[], now);
+
+        // initialisation will attempt a send, machine budget exhaustion should be deferred
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetExhausted)
+        );
+
+        // attempt a second send
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        // queued decoy should be popped and suppressed by absolute budget
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 1);
+
+        // ensure MachineBudgetExhausted is not repeatedly sent
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetExhausted)
+        );
+    }
+
+    #[test]
+    fn test_proportion_block_when_no_real_and_recovery() {
+        let machine = machine! {
+            queues: [None],
+            budget: Proportion(0.5),
+            state init {
+                action: IntegratorAction::SendDecoy,
+            },
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        // for proportional limits we block and suppress if no real packets sent first
+        let now = Instant::now();
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty(), "decoy should be blocked");
+        assert!(
+            framework.runtime.proportion_blocked,
+            "proportion_blocked should be set"
+        );
+        assert_eq!(framework.runtime.decoys_sent, 0);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetRecovered),
+        );
+
+        // simulate a real send for recovery
+        let _ = framework.process(&[Event::SendNormal], now);
+        assert!(framework.runtime.real_sent == 1);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetRecovered),
+        );
+
+        // send a decoy
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+    }
+
+    #[test]
+    fn test_state_budget_not_consumed_when_machine_blocks() {
+        let machine = machine! {
+            queues: [],
+            budget: Absolute(0),
+            state init {
+                action: IntegratorAction::SendDecoy,
+                budget: 1
+            },
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        // decoy should be blocked by machine before state budget is consumed
+        let now = Instant::now();
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.current_state_budget, Some(1));
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::StateBudgetExhausted)
+        );
+
+        // TODO: should this happen?
+        // assert!(
+        //     framework
+        //         .runtime
+        //         .deferred_events
+        //         .contains(&Event::MachineBudgetExhausted)
+        // );
+    }
+
+    #[test]
+    fn test_proportion_block_immediate_via_queue() {
+        let machine = machine! {
+            queues: [None],
+            budget: Proportion(0.3),
+            state init {},
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 0);
+        assert!(framework.runtime.proportion_blocked);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+    }
+
+    #[test]
+    fn test_proportion_allowed_boundary_and_blocking() {
+        let machine = machine! {
+            queues: [None],
+            budget: Proportion(0.5),
+            state init {},
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        // send 4 real
+        let now = Instant::now();
+        for _ in 0..4 {
+            let _ = framework.process(&[Event::SendNormal], now);
+        }
+        assert_eq!(framework.runtime.real_sent, 4);
+
+        // two decoys should be allowed but hit a reached budget
+        for _ in 0..2 {
+            let _ = framework.runtime.queues[0].push(TimedAction {
+                execute_at: now,
+                action: IntegratorAction::SendDecoy.into(),
+            });
+        }
+
+        let actions = framework.process(&[], now);
+        assert_eq!(framework.runtime.decoys_sent, 2);
+        assert!(
+            actions
+                .iter()
+                .filter(|a| **a == IntegratorAction::SendDecoy)
+                .count()
+                >= 2
+        );
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+
+        // another decoy should not be allowed
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+
+        let actions = framework.process(&[], now);
+        assert_eq!(actions.len(), 0);
+        assert!(framework.runtime.proportion_blocked);
+    }
+
+    #[test]
+    fn test_machine_exhausted_event_is_emitted_only_once_for_absolute() {
+        let machine = machine! {
+            queues: [None],
+            budget: Absolute(1),
+            state init {
+                action: IntegratorAction::SendDecoy,
+            }
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+        let _ = framework.process(&[], now);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetExhausted)
+        );
+
+        for _ in 0..3 {
+            let _ = framework.process(&[], now);
+            assert!(
+                !framework
+                    .runtime
+                    .deferred_events
+                    .contains(&Event::MachineBudgetExhausted)
+            );
+        }
+    }
+
+    #[test]
+    fn test_proportion_budget_reached_emitted_only_once_when_over_budget() {
+        let machine = machine! {
+            queues: [None],
+            budget: Proportion(0.5),
+            state init {},
+        }
+        .unwrap();
+        let mut framework = Framework::new(machine, rand::rng());
+
+        let now = Instant::now();
+
+        framework.process(&[Event::SendNormal; 2], now);
+        assert_eq!(framework.runtime.real_sent, 2);
+        assert!(!framework.runtime.proportion_blocked);
+
+        // send allowed decoy
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.contains(&IntegratorAction::SendDecoy));
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(framework.runtime.proportion_blocked);
+
+        // drain deferred events
+        let _ = framework.process(&[], now);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+
+        // force reset proportion_blocked and send a decoy
+        framework.runtime.proportion_blocked = false;
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(framework.runtime.proportion_blocked);
+        assert!(
+            framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached),
+        );
+
+        // drain deferred events
+        let _ = framework.process(&[], now);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached)
+        );
+
+        // send another decoy
+        let _ = framework.runtime.queues[0].push(TimedAction {
+            execute_at: now,
+            action: IntegratorAction::SendDecoy.into(),
+        });
+        let actions = framework.process(&[], now);
+        assert!(actions.is_empty());
+        assert_eq!(framework.runtime.decoys_sent, 1);
+        assert!(
+            !framework
+                .runtime
+                .deferred_events
+                .contains(&Event::MachineBudgetReached),
+        );
     }
 }

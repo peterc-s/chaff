@@ -372,6 +372,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::ReleaseBlock), None),
             ],
             [],
+            None,
         )
         .unwrap();
 
@@ -430,6 +431,7 @@ mod tests {
                 ),
             ],
             [],
+            None,
         )
         .unwrap();
 
@@ -467,6 +469,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::SendDecoy), None),
             ],
             [],
+            None,
         )
         .unwrap();
 
@@ -513,6 +516,7 @@ mod tests {
                 State::new(None, Some(IntegratorAction::BlockOutgoing(uniform)), None),
             ],
             [],
+            None,
         )
         .unwrap();
 
@@ -574,6 +578,7 @@ mod tests {
                 ),
             ],
             [],
+            None,
         )
         .unwrap();
 
