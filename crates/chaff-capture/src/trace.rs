@@ -115,16 +115,19 @@ impl Trace {
     }
 
     /// Get the slice of [`Direction`]s.
+    #[must_use]
     pub fn directions(&self) -> &[Direction] {
         &self.directions
     }
 
     /// Get the slice of timing deltas.
+    #[must_use]
     pub fn timing_deltas(&self) -> &[u32] {
         &self.timing_deltas
     }
 
     /// Get the slice of sizes.
+    #[must_use]
     pub fn sizes(&self) -> &[u32] {
         &self.sizes
     }
