@@ -37,7 +37,7 @@ pub fn run(output: Option<PathBuf>, ifname: Option<String>) -> Result<(), CliErr
     }?;
     let cap = capture_for(std::time::Duration::from_secs(10), device)?;
 
-    println!("Captured {} packets.", cap.directions.len());
+    println!("Captured {} packets.", cap.len());
 
     if let Some(path) = output {
         cap.serialise(&path)?;

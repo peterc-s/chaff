@@ -175,11 +175,7 @@ fn packets_to_trace(
     mac_address: MacAddress,
 ) -> Result<Trace, CaptureError> {
     if packets.is_empty() {
-        return Ok(Trace {
-            directions: Box::default(),
-            timing_deltas: Box::default(),
-            sizes: Box::default(),
-        });
+        return Ok(Trace::default());
     }
 
     let mac_address = mac_address.bytes();
@@ -218,11 +214,7 @@ fn packets_to_trace(
         "length of sizes and timing deltas do not match after conversion of packet to trace."
     );
 
-    Ok(Trace {
-        directions,
-        timing_deltas,
-        sizes,
-    })
+    Ok(Trace::new(directions, timing_deltas, sizes))
 }
 
 /// Stream a [`pcap::Capture`] into a [`Trace`] using the provided `local_mac` to determine
@@ -429,16 +421,19 @@ mod tests {
 
         // Since we used the first packet source MAC as the local MAC, this should
         // be send. The second packet is a SYN ACK from the remote.
-        assert!(matches!(trace.directions[0], Direction::Send));
-        assert!(matches!(trace.directions[1], Direction::Receive));
+        let directions = trace.directions();
+        assert!(matches!(directions[0], Direction::Send));
+        assert!(matches!(directions[1], Direction::Receive));
 
-        assert_eq!(trace.timing_deltas[0], 0);
-        assert_eq!(trace.timing_deltas[1], 911_310);
+        let timing_deltas = trace.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 911_310);
 
         // `tshark -r ./test-pcaps/test-http-5.pcap -T fields -e frame.len`
-        assert_eq!(trace.sizes[0], 62);
-        assert_eq!(trace.sizes[1], 62);
-        assert_eq!(trace.sizes[3], 533);
+        let sizes = trace.sizes();
+        assert_eq!(sizes[0], 62);
+        assert_eq!(sizes[1], 62);
+        assert_eq!(sizes[3], 533);
     }
 
     /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_us()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
@@ -463,9 +458,9 @@ mod tests {
         let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
 
         // The following values were found by inspecting the pcap with `tshark`.
-        assert!(matches!(trace.directions[0], Direction::Receive));
-        assert_eq!(trace.timing_deltas[0], 0);
-        assert_eq!(trace.sizes[0], 144);
+        assert!(matches!(trace.directions()[0], Direction::Receive));
+        assert_eq!(trace.timing_deltas()[0], 0);
+        assert_eq!(trace.sizes()[0], 144);
     }
 
     /// This test is for [`packets_to_trace()`], but also covers [`packet_ts_to_us()`] and [`determine_packet_direction()`] with `Linktype::SLL2`.
@@ -490,9 +485,9 @@ mod tests {
         let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
 
         // The following values were found by inspecting the pcap with `tshark`.
-        assert!(matches!(trace.directions[0], Direction::Send));
-        assert_eq!(trace.timing_deltas[0], 0);
-        assert_eq!(trace.sizes[0], 144);
+        assert!(matches!(trace.directions()[0], Direction::Send));
+        assert_eq!(trace.timing_deltas()[0], 0);
+        assert_eq!(trace.sizes()[0], 144);
     }
 
     #[test]
@@ -501,7 +496,7 @@ mod tests {
         let linktype = Linktype::ETHERNET;
         let local_mac = MacAddress::from([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe]);
         let trace = packets_to_trace(&packets, linktype, local_mac).unwrap();
-        assert_eq!(trace.directions.len(), 0);
+        assert!(trace.is_empty());
     }
 
     #[test]
@@ -542,15 +537,19 @@ mod tests {
         let trace = capture_to_trace(&mut cap, local_mac)
             .expect("should successfully stream pcap to trace");
 
-        assert_eq!(trace.directions.len(), 5);
-        assert_eq!(trace.directions[0], Direction::Send);
-        assert_eq!(trace.directions[1], Direction::Receive);
+        assert_eq!(trace.len(), 5);
 
-        assert_eq!(trace.timing_deltas[0], 0);
-        assert_eq!(trace.timing_deltas[1], 911_310);
+        let directions = trace.directions();
+        assert_eq!(directions[0], Direction::Send);
+        assert_eq!(directions[1], Direction::Receive);
 
-        assert_eq!(trace.sizes[0], 62);
-        assert_eq!(trace.sizes[1], 62);
+        let timing_deltas = trace.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 911_310);
+
+        let sizes = trace.sizes();
+        assert_eq!(sizes[0], 62);
+        assert_eq!(sizes[1], 62);
     }
 
     #[test]
@@ -563,9 +562,9 @@ mod tests {
 
         let trace = capture_to_trace(&mut cap, local_mac).unwrap();
 
-        assert_eq!(trace.directions.len(), 1);
-        assert_eq!(trace.directions[0], Direction::Receive);
-        assert_eq!(trace.sizes[0], 144);
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace.directions()[0], Direction::Receive);
+        assert_eq!(trace.sizes()[0], 144);
     }
 
     #[test]
