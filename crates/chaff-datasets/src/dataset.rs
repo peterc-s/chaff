@@ -127,11 +127,7 @@ mod tests {
     use super::Dataset;
 
     fn make_trace(dir: Direction) -> Trace {
-        Trace {
-            directions: Box::new([dir]),
-            timing_deltas: Box::new([0]),
-            sizes: Box::new([1]),
-        }
+        Trace::new([dir], [0], [1])
     }
 
     // Mostly for tarpaulin coverage. these are trivial methods.
@@ -166,7 +162,7 @@ mod tests {
         let a = "A".to_string();
         let a_traces = dataset.get_class(&a).unwrap();
         assert_eq!(a_traces.len(), 1);
-        assert_eq!(a_traces[0].directions[0], Direction::Send);
+        assert_eq!(a_traces[0].directions()[0], Direction::Send);
 
         let missing = "><>".to_string();
         assert!(dataset.get_class(&missing).is_none());

@@ -85,13 +85,13 @@ impl TraceBuilder {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Trace {
     /// The direction in which a packet was send.
-    pub directions: Box<[Direction]>,
+    directions: Box<[Direction]>,
 
     /// How long between last packet and this one.
-    pub timing_deltas: Box<[u32]>,
+    timing_deltas: Box<[u32]>,
 
     /// Assuming largest MTU is 4GiB (IPv6 jumbograms, for example).
-    pub sizes: Box<[u32]>,
+    sizes: Box<[u32]>,
 }
 
 /// Trace binary header information.
@@ -101,6 +101,34 @@ pub const TRACE_MAGIC: &[u8; 5] = b"CHAFF";
 pub const TRACE_VERSION: &[u8; 3] = &[0, 1, 0];
 
 impl Trace {
+    /// Create a new [`Trace`] with the given [`Direction`]s, timing deltas, and sizes.
+    pub fn new(
+        directions: impl Into<Box<[Direction]>>,
+        timing_deltas: impl Into<Box<[u32]>>,
+        sizes: impl Into<Box<[u32]>>,
+    ) -> Self {
+        Self {
+            directions: directions.into(),
+            timing_deltas: timing_deltas.into(),
+            sizes: sizes.into(),
+        }
+    }
+
+    /// Get the slice of [`Direction`]s.
+    pub fn directions(&self) -> &[Direction] {
+        &self.directions
+    }
+
+    /// Get the slice of timing deltas.
+    pub fn timing_deltas(&self) -> &[u32] {
+        &self.timing_deltas
+    }
+
+    /// Get the slice of sizes.
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes
+    }
+
     /// Should be used before a size-sensitive operation. Errors if lengths mismatch.
     fn len_check(&self) -> Result<(), TraceError> {
         let directions_len = self.directions.len();
@@ -314,13 +342,14 @@ pub struct TraceIter<'a> {
 }
 
 /// A single packet in a trace.
+#[derive(Clone, Copy, Debug)]
 pub struct TracePacket(pub Direction, pub u32, pub u32);
 
 impl Iterator for TraceIter<'_> {
     type Item = TracePacket;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.trace.directions.len() {
+        if self.index >= self.trace.len() {
             return None;
         }
 

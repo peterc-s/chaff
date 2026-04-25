@@ -341,9 +341,10 @@ mod tests {
         assert_eq!(traces.len(), 1);
 
         let t = &traces[0];
-        assert_eq!(t.directions.len(), 2);
-        assert_eq!(t.directions[0], Direction::Send);
-        assert_eq!(t.directions[1], Direction::Receive);
+        assert_eq!(t.len(), 2);
+        let directions = t.directions();
+        assert_eq!(directions[0], Direction::Send);
+        assert_eq!(directions[1], Direction::Receive);
     }
 
     #[test]
@@ -358,8 +359,8 @@ mod tests {
         let traces = dataset.data.get("9").unwrap();
         assert_eq!(traces.len(), 2);
 
-        assert_eq!(traces[0].directions[0], Direction::Receive);
-        assert_eq!(traces[1].directions[0], Direction::Send);
+        assert_eq!(traces[0].directions()[0], Direction::Receive);
+        assert_eq!(traces[1].directions()[0], Direction::Send);
     }
 
     #[test]
@@ -385,8 +386,8 @@ mod tests {
 
         let traces = &dataset.data["2"];
         assert_eq!(traces.len(), 1);
-        assert_eq!(traces[0].directions.len(), 1);
-        assert_eq!(traces[0].directions[0], Direction::Send);
+        assert_eq!(traces[0].len(), 1);
+        assert_eq!(traces[0].directions()[0], Direction::Send);
     }
 
     #[test]
@@ -416,7 +417,7 @@ mod tests {
         let dataset = tiktok::try_parse(&tmp).unwrap();
         let traces = dataset.data.get("1").unwrap();
         assert_eq!(traces.len(), 1);
-        assert_eq!(traces[0].directions.len(), 0);
+        assert_eq!(traces[0].len(), 0);
     }
 
     #[test]
@@ -428,9 +429,10 @@ mod tests {
 
         let dataset = tiktok::try_parse(&tmp).unwrap();
         let trace = &dataset.data["1"][0];
-        assert_eq!(trace.directions.len(), 2);
-        assert_eq!(trace.directions[0], Direction::Send);
-        assert_eq!(trace.directions[1], Direction::Receive);
+        assert_eq!(trace.len(), 2);
+        let directions = trace.directions();
+        assert_eq!(directions[0], Direction::Send);
+        assert_eq!(directions[1], Direction::Receive);
     }
 
     #[test]

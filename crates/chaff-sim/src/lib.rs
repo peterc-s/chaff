@@ -148,14 +148,14 @@ impl SimulatorOverheads {
             real_sent: runtime.get_real_sent(),
             original_duration: Duration::from_micros(
                 original_trace
-                    .timing_deltas
+                    .timing_deltas()
                     .iter()
                     .map(|delta| u64::from(*delta))
                     .sum(),
             ),
             final_duration: Duration::from_micros(
                 defended_trace
-                    .timing_deltas
+                    .timing_deltas()
                     .iter()
                     .map(|delta| u64::from(*delta))
                     .sum(),
@@ -376,11 +376,11 @@ mod tests {
     #[test]
     #[expect(clippy::float_cmp)]
     fn test_sim_round_trip() {
-        let trace = Trace {
-            directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
-            timing_deltas: Box::new([10, 20, 30]),
-            sizes: Box::new([100, 200, 300]),
-        };
+        let trace = Trace::new(
+            [Direction::Send, Direction::Receive, Direction::Send],
+            [10, 20, 30],
+            [100, 200, 300],
+        );
         let machine = machine! {
             queues: [],
             state init {},
@@ -497,16 +497,16 @@ mod tests {
 
         let mut sim = Simulator::with(
             Framework::new(machine, rand::rng()),
-            Trace {
-                directions: Box::new([
+            Trace::new(
+                [
                     Direction::Receive, // 0: trigger block
                     Direction::Send,    // 1: blocked
                     Direction::Send,    // 2: blocked
                     Direction::Receive, // 3: trigger release
-                ]),
-                timing_deltas: Box::new([0, 10, 10, 10]),
-                sizes: Box::new([100, 100, 100, 100]),
-            },
+                ],
+                [0, 10, 10, 10],
+                [100, 100, 100, 100],
+            ),
             rand::rng(),
         );
 
@@ -521,15 +521,17 @@ mod tests {
         // send @ 40 (recorded)
 
         // check expected directions
-        assert_eq!(out.directions.len(), 4);
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Receive);
-        assert_eq!(out.directions[2], Direction::Send);
-        assert_eq!(out.directions[3], Direction::Send);
+        assert_eq!(out.len(), 4);
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Receive);
+        assert_eq!(directions[2], Direction::Send);
+        assert_eq!(directions[3], Direction::Send);
 
         // check final burst timings
-        assert_eq!(out.timing_deltas[2], 0);
-        assert_eq!(out.timing_deltas[3], 0);
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[2], 0);
+        assert_eq!(timing_deltas[3], 0);
     }
 
     #[test]
@@ -556,24 +558,26 @@ mod tests {
 
         let mut sim = Simulator::with(
             Framework::new(machine, rand::rng()),
-            Trace {
-                directions: Box::new([
+            Trace::new(
+                [
                     Direction::Receive, // 0: block until 50
                     Direction::Send,    // 10: should be blocked
                     Direction::Send,    // 60: should not be blocked
-                ]),
-                timing_deltas: Box::new([0, 10, 50]),
-                sizes: Box::new([100, 100, 100]),
-            },
+                ],
+                [0, 10, 50],
+                [100, 100, 100],
+            ),
             rand::rng(),
         );
 
         let (out, _) = sim.run();
 
-        assert_eq!(out.directions.len(), 3);
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 50); // released after time elapsed.
-        assert_eq!(out.timing_deltas[2], 10);
+        assert_eq!(out.len(), 3);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 50); // released after time elapsed.
+        assert_eq!(timing_deltas[2], 10);
     }
 
     #[test]
@@ -595,21 +599,21 @@ mod tests {
 
         let mut sim = Simulator::with(
             Framework::new(machine, rand::rng()),
-            Trace {
-                directions: Box::new([Direction::Receive]),
-                timing_deltas: Box::new([0]),
-                sizes: Box::new([100]),
-            },
+            Trace::new([Direction::Receive], [0], [100]),
             rand::rng(),
         );
 
         let (out, overheads) = sim.run();
 
-        assert_eq!(out.directions.len(), 2);
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 0);
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.len(), 2);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 0);
+
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Send);
 
         assert_eq!(overheads.bandwidth_abs(), 1);
         // because nothing was sent, this should be infinite.
@@ -646,11 +650,11 @@ mod tests {
 
         let framework = Framework::new(machine, ChaCha20Rng::from_seed([0; 32]));
 
-        let input_trace = Trace {
-            directions: Box::new([Direction::Receive, Direction::Send, Direction::Send]),
-            timing_deltas: Box::new([0, 10, 100]),
-            sizes: Box::new([100, 100, 100]),
-        };
+        let input_trace = Trace::new(
+            [Direction::Receive, Direction::Send, Direction::Send],
+            [0, 10, 100],
+            [100, 100, 100],
+        );
 
         let mut sim = Simulator::with(framework, input_trace, ChaCha20Rng::from_seed([0; 32]));
         let (output_trace, overheads) = sim.run();
@@ -660,10 +664,10 @@ mod tests {
         // send @ random, random block released
         // send @ random, should have also been blocked and then released immediately
 
-        assert_eq!(output_trace.directions.len(), 3);
-        assert_eq!(output_trace.directions[0], Direction::Receive);
+        assert_eq!(output_trace.len(), 3);
+        assert_eq!(output_trace.directions()[0], Direction::Receive);
 
-        let elapsed: u32 = output_trace.timing_deltas.iter().sum();
+        let elapsed: u32 = output_trace.timing_deltas().iter().sum();
         assert!(
             elapsed > 110,
             "total time should be extended due to random block."
@@ -684,7 +688,7 @@ mod tests {
         let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
         let (out, _) = sim.run();
-        assert!(out.directions.is_empty());
+        assert!(out.is_empty());
     }
 
     #[test]
@@ -712,22 +716,21 @@ mod tests {
 
         let mut sim = Simulator::with(
             Framework::new(machine, rand::rng()),
-            Trace {
-                directions: Box::new([Direction::Receive, Direction::Send]),
-                timing_deltas: Box::new([0, 10]),
-                sizes: Box::new([100, 100]),
-            },
+            Trace::new([Direction::Receive, Direction::Send], [0, 10], [100, 100]),
             rand::rng(),
         );
 
         let (out, overheads) = sim.run();
 
-        assert_eq!(out.directions.len(), 2);
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Send);
+        assert_eq!(out.len(), 2);
 
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 999);
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Send);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 999);
 
         // orig was 10, final at 999 now
         assert_eq!(overheads.time_abs().unwrap().as_micros(), 989);
@@ -744,17 +747,9 @@ mod tests {
         }
         .unwrap();
 
-        let trace_0 = Trace {
-            directions: Box::new([Direction::Receive, Direction::Send]),
-            timing_deltas: Box::new([0, 10]),
-            sizes: Box::new([100, 100]),
-        };
+        let trace_0 = Trace::new([Direction::Receive, Direction::Send], [0, 10], [100, 100]);
 
-        let trace_1 = Trace {
-            directions: Box::new([Direction::Send, Direction::Receive]),
-            timing_deltas: Box::new([10, 0]),
-            sizes: Box::new([20, 20]),
-        };
+        let trace_1 = Trace::new([Direction::Send, Direction::Receive], [10, 0], [20, 20]);
 
         let mut sim = Simulator::with(
             Framework::new(machine, rand::rng()),
@@ -786,11 +781,11 @@ mod tests {
         let framework = Framework::new(machine, rand::rng());
 
         // sandwich the scheduled decoy
-        let trace = Trace {
-            directions: Box::new([Direction::Receive, Direction::Receive]),
-            timing_deltas: Box::new([0, 2_000_000]),
-            sizes: Box::new([100, 100]),
-        };
+        let trace = Trace::new(
+            [Direction::Receive, Direction::Receive],
+            [0, 2_000_000],
+            [100, 100],
+        );
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
         let (out, _) = sim.run();
@@ -799,14 +794,17 @@ mod tests {
         // recv@0s
         // send@1s
         // recv@2s
-        assert_eq!(out.directions.len(), 3, "expected decoy");
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Send);
-        assert_eq!(out.directions[2], Direction::Receive);
+        assert_eq!(out.len(), 3, "expected decoy");
 
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 1_000_000, "expected decoy");
-        assert_eq!(out.timing_deltas[2], 1_000_000);
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Send);
+        assert_eq!(directions[2], Direction::Receive);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 1_000_000, "expected decoy");
+        assert_eq!(timing_deltas[2], 1_000_000);
     }
 
     #[test]
@@ -825,11 +823,11 @@ mod tests {
 
         let framework = Framework::new(machine, rand::rng());
 
-        let trace = Trace {
-            directions: Box::new([Direction::Receive, Direction::Receive]),
-            timing_deltas: Box::new([0, 1_000_000]),
-            sizes: Box::new([100, 100]),
-        };
+        let trace = Trace::new(
+            [Direction::Receive, Direction::Receive],
+            [0, 1_000_000],
+            [100, 100],
+        );
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
         let (out, _) = sim.run();
@@ -838,13 +836,17 @@ mod tests {
         // recv@0 (from trace)
         // send@0 (decoy from machine scheduled)
         // recv@1s (from trace)
-        assert_eq!(out.directions.len(), 3);
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Send);
-        assert_eq!(out.directions[2], Direction::Receive);
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 0);
-        assert_eq!(out.timing_deltas[2], 1_000_000);
+        assert_eq!(out.len(), 3);
+
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Send);
+        assert_eq!(directions[2], Direction::Receive);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 0);
+        assert_eq!(timing_deltas[2], 1_000_000);
     }
 
     #[test]
@@ -863,22 +865,26 @@ mod tests {
 
         let framework = Framework::new(machine, rand::rng());
 
-        let trace = Trace {
-            directions: Box::new([Direction::Receive, Direction::Receive]),
-            timing_deltas: Box::new([0, 1_000_000]),
-            sizes: Box::new([100, 100]),
-        };
+        let trace = Trace::new(
+            [Direction::Receive, Direction::Receive],
+            [0, 1_000_000],
+            [100, 100],
+        );
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
         let (out, _) = sim.run();
 
         // we don't care about order necessarily as the scheduled action and trace should happen at
         // the same time
-        assert!(out.directions.len() == 3);
-        assert!(out.directions.contains(&Direction::Receive));
-        assert!(out.directions.contains(&Direction::Send));
-        assert_eq!(out.timing_deltas[1], 1_000_000);
-        assert_eq!(out.timing_deltas[2], 0);
+        assert_eq!(out.len(), 3);
+
+        let directions = out.directions();
+        assert!(directions.contains(&Direction::Receive));
+        assert!(directions.contains(&Direction::Send));
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[1], 1_000_000);
+        assert_eq!(timing_deltas[2], 0);
     }
 
     #[test]
@@ -898,11 +904,11 @@ mod tests {
         .unwrap();
 
         let framework = Framework::new(machine, rand::rng());
-        let trace = Trace {
-            directions: Box::new([Direction::Receive, Direction::Receive]),
-            timing_deltas: Box::new([0, 2_000_000]),
-            sizes: Box::new([100, 100]),
-        };
+        let trace = Trace::new(
+            [Direction::Receive, Direction::Receive],
+            [0, 2_000_000],
+            [100, 100],
+        );
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
         let (out, _) = sim.run();
@@ -912,15 +918,19 @@ mod tests {
         // send@1s (from either init or schedule_second)
         // send@1s (same as above)
         // recv@2s (from trace)
-        assert_eq!(out.directions.len(), 4);
-        assert_eq!(out.directions[0], Direction::Receive);
-        assert_eq!(out.directions[1], Direction::Send);
-        assert_eq!(out.directions[2], Direction::Send);
-        assert_eq!(out.directions[3], Direction::Receive);
-        assert_eq!(out.timing_deltas[0], 0);
-        assert_eq!(out.timing_deltas[1], 1_000_000);
-        assert_eq!(out.timing_deltas[2], 0);
-        assert_eq!(out.timing_deltas[3], 1_000_000);
+        assert_eq!(out.len(), 4);
+
+        let directions = out.directions();
+        assert_eq!(directions[0], Direction::Receive);
+        assert_eq!(directions[1], Direction::Send);
+        assert_eq!(directions[2], Direction::Send);
+        assert_eq!(directions[3], Direction::Receive);
+
+        let timing_deltas = out.timing_deltas();
+        assert_eq!(timing_deltas[0], 0);
+        assert_eq!(timing_deltas[1], 1_000_000);
+        assert_eq!(timing_deltas[2], 0);
+        assert_eq!(timing_deltas[3], 1_000_000);
     }
 
     #[test]
@@ -938,18 +948,14 @@ mod tests {
         .unwrap();
 
         let framework = Framework::new(machine, rand::rng());
-        let trace = Trace {
-            directions: Box::new([]),
-            timing_deltas: Box::new([]),
-            sizes: Box::new([]),
-        };
+        let trace = Trace::default();
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
         let (out, _) = sim.run();
 
-        assert_eq!(out.directions.len(), 1);
-        assert_eq!(out.directions[0], Direction::Send);
-        assert_eq!(out.timing_deltas[0], 1_000_000);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out.directions()[0], Direction::Send);
+        assert_eq!(out.timing_deltas()[0], 1_000_000);
     }
 
     // TODO: simulator is "perfect" in that it always jumps to the soonest event and an

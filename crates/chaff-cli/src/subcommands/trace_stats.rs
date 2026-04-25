@@ -13,6 +13,6 @@ use crate::errors::CliError;
 /// - If deserialising the trace fails [`Trace::deserialise`].
 pub fn run(input: &PathBuf) -> Result<(), CliError> {
     let trace = Trace::deserialise(&input)?;
-    println!("Packets: {}", trace.directions.len());
+    println!("Packets: {}", trace.len());
     Ok(())
 }
