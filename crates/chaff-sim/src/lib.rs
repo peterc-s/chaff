@@ -208,6 +208,8 @@ impl SimulatorOverheads {
     }
 }
 
+// display impls not tested unless necessary.
+#[cfg(not(tarpaulin_include))]
 impl Display for SimulatorOverheads {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Time:")?;
@@ -398,8 +400,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_sim_round_trip_from_trace_files() {
         let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR").to_string() + "/test-traces");
+        let mut overheads = Vec::new();
 
         let mut found_file = false;
         for file in fs::read_dir(&base_path)
@@ -423,10 +427,15 @@ mod tests {
             .unwrap();
             let framework = Framework::new(machine, rand::rng());
             let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
-            let (out_trace, _) = sim.run();
+            let (out_trace, overhead) = sim.run();
 
             assert_eq!(in_trace, out_trace);
+            overheads.push(overhead);
         }
+
+        let overheads = SimulatorOverheads::total_from(overheads).unwrap();
+        assert_eq!(overheads.bandwidth_prop(), 0.0);
+        assert_eq!(overheads.time_prop(), 0.0);
 
         assert!(found_file);
     }
@@ -568,6 +577,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_send_decoy() {
         let trans =
             TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
@@ -593,13 +603,17 @@ mod tests {
             rand::rng(),
         );
 
-        let (out, _) = sim.run();
+        let (out, overheads) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.timing_deltas[0], 0);
         assert_eq!(out.timing_deltas[1], 0);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
+
+        assert_eq!(overheads.bandwidth_abs(), 1);
+        // because nothing was sent, this should be infinite.
+        assert_eq!(overheads.bandwidth_prop(), f64::INFINITY);
     }
 
     /// This test exists mostly because all other tests use [`chaff::distr::Constant`] and the standard
@@ -639,7 +653,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, input_trace, ChaCha20Rng::from_seed([0; 32]));
-        let (output_trace, _) = sim.run();
+        let (output_trace, overheads) = sim.run();
 
         // expected:
         // recv @ 0, trigger random block outgoing
@@ -654,6 +668,9 @@ mod tests {
             elapsed > 110,
             "total time should be extended due to random block."
         );
+
+        assert!(!overheads.time_abs().unwrap().is_zero());
+        assert!(overheads.time_prop() > 0.0);
     }
 
     #[test]
@@ -671,6 +688,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_block_expires_after_trace_ends() {
         let trans =
             TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
@@ -702,13 +720,18 @@ mod tests {
             rand::rng(),
         );
 
-        let (out, _) = sim.run();
+        let (out, overheads) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
 
+        assert_eq!(out.timing_deltas[0], 0);
         assert_eq!(out.timing_deltas[1], 999);
+
+        // orig was 10, final at 999 now
+        assert_eq!(overheads.time_abs().unwrap().as_micros(), 989);
+        assert_eq!(overheads.time_prop(), 989.0 / 10.0);
     }
 
     #[test]
