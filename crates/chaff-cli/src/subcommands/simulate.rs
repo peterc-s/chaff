@@ -5,7 +5,7 @@ use std::{fs, path::PathBuf};
 use chaff::{framework::Framework, machine::Machine};
 use chaff_capture::trace::Trace;
 use chaff_datasets::dataset::DatasetBuilder;
-use chaff_sim::Simulator;
+use chaff_sim::{Simulator, SimulatorOverheads};
 
 use crate::{errors::CliError, utils::parse_dataset};
 
@@ -23,13 +23,14 @@ pub fn run_trace(
     let trace = Trace::deserialise(input)?;
     let framework = Framework::new(machine, rand::rng());
     let mut sim: Simulator<_> = Simulator::with(framework, trace, rand::rng());
-    let out = sim.run();
+    let (trace, overheads) = sim.run();
 
-    println!("{out}");
+    println!("{trace}");
     println!("Final state: {}", sim.framework.get_state());
+    println!("{overheads}");
 
     if let Some(output) = output {
-        out.serialise(output)?;
+        trace.serialise(output)?;
     }
 
     Ok(())
@@ -53,13 +54,20 @@ pub fn run_dataset(
 
     let framework = Framework::new(machine, rand::rng());
     let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
+    let mut overheads = Vec::with_capacity(input_data.len());
 
     for (class, traces) in input_data {
         for trace in traces {
             sim.replace_trace(trace.clone());
-            let trace = sim.run();
+            let (trace, overhead) = sim.run();
             output_dataset_builder.push_to_class(class, trace);
+            overheads.push(overhead);
         }
+    }
+
+    let overheads = SimulatorOverheads::total_from(overheads);
+    if let Some(overheads) = overheads {
+        println!("{overheads}");
     }
 
     if let Some(output) = output {

@@ -2,10 +2,13 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, VecDeque},
+    fmt::Display,
     time::{Duration, Instant},
 };
 
-use chaff::{action::IntegratorAction, event::Event, framework::Framework};
+use chaff::{
+    action::IntegratorAction, event::Event, framework::Framework, machine::MachineRuntime,
+};
 use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 use rand::distr::Distribution as _;
 use rand::{CryptoRng, Rng};
@@ -95,22 +98,6 @@ impl Extend<SimulatorEvent> for SimulatorQueue {
     }
 }
 
-/// An instance of the Chaff simulator.
-#[derive(Clone, Debug)]
-pub struct Simulator<R: Rng + CryptoRng> {
-    /// An instance of the Chaff [`Framework`] to simulate.
-    pub framework: Framework<R>,
-
-    /// The trace to simulate on ([`Simulator::queue`] is filled with this on [`Simulator::run`]).
-    trace: Trace,
-
-    /// The simulated queues, filled with a [`Trace`].
-    queue: SimulatorQueue,
-
-    /// The [`Rng`] used for [`IntegratorAction`]s.
-    rng: R,
-}
-
 #[derive(Clone, Debug, Default)]
 struct BlockState {
     until: Option<u64>,
@@ -140,6 +127,121 @@ impl BlockState {
             })
             .collect()
     }
+}
+
+/// Overheads calculated from a run of the simulator on a trace.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SimulatorOverheads {
+    decoys_sent: usize,
+    real_sent: usize,
+    original_duration: Duration,
+    final_duration: Duration,
+}
+
+impl SimulatorOverheads {
+    /// Create a new [`SimulatorOverheads`] with the given [`MachineRuntime`] and
+    /// original + defended [`Trace`]s.
+    #[must_use]
+    pub fn new(runtime: &MachineRuntime, original_trace: &Trace, defended_trace: &Trace) -> Self {
+        Self {
+            decoys_sent: runtime.get_decoys_sent(),
+            real_sent: runtime.get_real_sent(),
+            original_duration: Duration::from_micros(
+                original_trace
+                    .timing_deltas
+                    .iter()
+                    .map(|delta| u64::from(*delta))
+                    .sum(),
+            ),
+            final_duration: Duration::from_micros(
+                defended_trace
+                    .timing_deltas
+                    .iter()
+                    .map(|delta| u64::from(*delta))
+                    .sum(),
+            ),
+        }
+    }
+
+    /// Sums all the internal fields.
+    ///
+    /// This means that absolute bandwidth and time overheads are total over the entire [`Vec`] of
+    /// [`SimulatorOverheads`], but proportional become a micro-average of overheads.
+    ///
+    /// Is [`None`] if the original iterator was empty
+    pub fn total_from(multiple: impl IntoIterator<Item = Self>) -> Option<Self> {
+        multiple.into_iter().reduce(|a, b| Self {
+            decoys_sent: a.decoys_sent + b.decoys_sent,
+            real_sent: a.real_sent + b.real_sent,
+            original_duration: a.original_duration + b.original_duration,
+            final_duration: a.final_duration + b.final_duration,
+        })
+    }
+
+    /// The absolute bandwidth overhead, defined as the number of decoy packets sent.
+    #[must_use]
+    pub fn bandwidth_abs(&self) -> usize {
+        self.decoys_sent
+    }
+
+    /// Calculates the proportional bandwidth overhead, defined as the number of decoy packets sent
+    /// over the number of real packets sent.
+    #[must_use]
+    #[expect(clippy::cast_precision_loss)]
+    pub fn bandwidth_prop(&self) -> f64 {
+        self.decoys_sent as f64 / self.real_sent as f64
+    }
+
+    /// Calculates the absolute time overhead. [`Option`] because this uses [`Duration::checked_sub`]
+    /// which could fail if either a negative time is produced or an overflow occurs.
+    #[must_use]
+    pub fn time_abs(&self) -> Option<Duration> {
+        self.final_duration.checked_sub(self.original_duration)
+    }
+
+    /// Calculates the proportional time overhead, defined as the difference between the
+    /// defended and original durations over the original duration.
+    #[must_use]
+    pub fn time_prop(&self) -> f64 {
+        (self.final_duration.as_secs_f64() - self.original_duration.as_secs_f64())
+            / self.original_duration.as_secs_f64()
+    }
+}
+
+// display impls not tested unless necessary.
+#[cfg(not(tarpaulin_include))]
+impl Display for SimulatorOverheads {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Time:")?;
+        if let Some(abs) = self.time_abs() {
+            writeln!(f, "Absolute: {}μs", abs.as_micros())?;
+        } else {
+            writeln!(f, "Absolute: negative")?;
+        }
+        writeln!(f, "Proportion: {:.3}%", self.time_prop() * 100.0)?;
+
+        writeln!(f, "\nBandwidth:")?;
+        writeln!(f, "Absolute: {} packets", self.bandwidth_abs())?;
+        writeln!(f, "Proportion: {:.3}%", self.bandwidth_prop() * 100.0)?;
+
+        Ok(())
+    }
+}
+
+/// An instance of the Chaff simulator.
+#[derive(Clone, Debug)]
+pub struct Simulator<R: Rng + CryptoRng> {
+    /// An instance of the Chaff [`Framework`] to simulate.
+    pub framework: Framework<R>,
+
+    /// The trace to simulate on ([`Simulator::queue`] is filled with this on [`Simulator::run`]).
+    trace: Trace,
+
+    /// The simulated queues, filled with a [`Trace`].
+    queue: SimulatorQueue,
+
+    /// The [`Rng`] used for [`IntegratorAction`]s.
+    rng: R,
 }
 
 impl<R: Rng + CryptoRng> Simulator<R> {
@@ -190,7 +292,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
 
     /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
     /// [`Trace`].
-    pub fn run(&mut self) -> Trace {
+    pub fn run(&mut self) -> (Trace, SimulatorOverheads) {
         self.queue = SimulatorQueue::from(self.trace.clone());
         let mut block_state = BlockState::default();
         let mut out_builder = TraceBuilder::default();
@@ -246,7 +348,11 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             });
         }
 
-        out_builder.build()
+        let defended_trace = out_builder.build();
+        let overheads =
+            SimulatorOverheads::new(self.framework.peek_runtime(), &self.trace, &defended_trace);
+
+        (defended_trace, overheads)
     }
 }
 
@@ -268,6 +374,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_sim_round_trip() {
         let trace = Trace {
             directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
@@ -282,14 +389,21 @@ mod tests {
         let framework = Framework::new(machine, rand::rng());
         let mut sim: Simulator<_> = Simulator::with(framework, trace.clone(), rand::rng());
 
-        let out_trace = sim.run();
+        let (out_trace, overheads) = sim.run();
 
         assert_eq!(trace, out_trace);
+        assert_eq!(overheads.bandwidth_abs(), 0);
+        assert_eq!(overheads.real_sent, 2);
+        assert_eq!(overheads.time_abs().map(|time| time.as_nanos()), Some(0));
+        assert_eq!(overheads.time_prop(), 0.0);
+        assert_eq!(overheads.bandwidth_prop(), 0.0);
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_sim_round_trip_from_trace_files() {
         let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR").to_string() + "/test-traces");
+        let mut overheads = Vec::new();
 
         let mut found_file = false;
         for file in fs::read_dir(&base_path)
@@ -313,10 +427,15 @@ mod tests {
             .unwrap();
             let framework = Framework::new(machine, rand::rng());
             let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
-            let out_trace = sim.run();
+            let (out_trace, overhead) = sim.run();
 
             assert_eq!(in_trace, out_trace);
+            overheads.push(overhead);
         }
+
+        let overheads = SimulatorOverheads::total_from(overheads).unwrap();
+        assert_eq!(overheads.bandwidth_prop(), 0.0);
+        assert_eq!(overheads.time_prop(), 0.0);
 
         assert!(found_file);
     }
@@ -391,7 +510,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv @ 10 (recorded)
@@ -449,7 +568,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 3);
         assert_eq!(out.timing_deltas[0], 0);
@@ -458,6 +577,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_send_decoy() {
         let trans =
             TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
@@ -483,13 +603,17 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, overheads) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.timing_deltas[0], 0);
         assert_eq!(out.timing_deltas[1], 0);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
+
+        assert_eq!(overheads.bandwidth_abs(), 1);
+        // because nothing was sent, this should be infinite.
+        assert_eq!(overheads.bandwidth_prop(), f64::INFINITY);
     }
 
     /// This test exists mostly because all other tests use [`chaff::distr::Constant`] and the standard
@@ -529,7 +653,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, input_trace, ChaCha20Rng::from_seed([0; 32]));
-        let output_trace = sim.run();
+        let (output_trace, overheads) = sim.run();
 
         // expected:
         // recv @ 0, trigger random block outgoing
@@ -544,6 +668,9 @@ mod tests {
             elapsed > 110,
             "total time should be extended due to random block."
         );
+
+        assert!(!overheads.time_abs().unwrap().is_zero());
+        assert!(overheads.time_prop() > 0.0);
     }
 
     #[test]
@@ -556,11 +683,12 @@ mod tests {
         let framework = Framework::new(machine, rand::rng());
         let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
-        let out = sim.run();
+        let (out, _) = sim.run();
         assert!(out.directions.is_empty());
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_block_expires_after_trace_ends() {
         let trans =
             TransitionProbs::try_new([(Event::ReceiveNormal, [(1, 1.0).try_into().unwrap()])])
@@ -592,13 +720,18 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, overheads) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.directions[0], Direction::Receive);
         assert_eq!(out.directions[1], Direction::Send);
 
+        assert_eq!(out.timing_deltas[0], 0);
         assert_eq!(out.timing_deltas[1], 999);
+
+        // orig was 10, final at 999 now
+        assert_eq!(overheads.time_abs().unwrap().as_micros(), 989);
+        assert_eq!(overheads.time_prop(), 989.0 / 10.0);
     }
 
     #[test]
@@ -660,7 +793,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0s
@@ -699,7 +832,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0 (from trace)
@@ -737,7 +870,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // we don't care about order necessarily as the scheduled action and trace should happen at
         // the same time
@@ -772,7 +905,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0 (from trace)
@@ -812,7 +945,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 1);
         assert_eq!(out.directions[0], Direction::Send);
