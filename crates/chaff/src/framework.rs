@@ -241,6 +241,11 @@ impl<R: Rng + CryptoRng> Framework<R> {
     pub fn get_state(&self) -> usize {
         self.runtime.state
     }
+
+    /// Clones the current [`MachineRuntime`].
+    pub fn peek_runtime(&self) -> &MachineRuntime {
+        &self.runtime
+    }
 }
 
 #[cfg(test)]

@@ -418,6 +418,18 @@ impl MachineRuntime {
             .filter_map(TimedQueue::peek_soonest_instant)
             .min()
     }
+
+    /// Returns the number of decoy packets sent.
+    #[must_use]
+    pub fn get_decoys_sent(&self) -> usize {
+        self.decoys_sent
+    }
+
+    /// Returns the number of real packets sent.
+    #[must_use]
+    pub fn get_real_sent(&self) -> usize {
+        self.real_sent
+    }
 }
 
 #[cfg(test)]

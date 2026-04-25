@@ -2,10 +2,13 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, VecDeque},
+    fmt::Display,
     time::{Duration, Instant},
 };
 
-use chaff::{action::IntegratorAction, event::Event, framework::Framework};
+use chaff::{
+    action::IntegratorAction, event::Event, framework::Framework, machine::MachineRuntime,
+};
 use chaff_capture::trace::{Direction, Trace, TraceBuilder, TracePacket};
 use rand::distr::Distribution as _;
 use rand::{CryptoRng, Rng};
@@ -95,22 +98,6 @@ impl Extend<SimulatorEvent> for SimulatorQueue {
     }
 }
 
-/// An instance of the Chaff simulator.
-#[derive(Clone, Debug)]
-pub struct Simulator<R: Rng + CryptoRng> {
-    /// An instance of the Chaff [`Framework`] to simulate.
-    pub framework: Framework<R>,
-
-    /// The trace to simulate on ([`Simulator::queue`] is filled with this on [`Simulator::run`]).
-    trace: Trace,
-
-    /// The simulated queues, filled with a [`Trace`].
-    queue: SimulatorQueue,
-
-    /// The [`Rng`] used for [`IntegratorAction`]s.
-    rng: R,
-}
-
 #[derive(Clone, Debug, Default)]
 struct BlockState {
     until: Option<u64>,
@@ -140,6 +127,118 @@ impl BlockState {
             })
             .collect()
     }
+}
+
+/// Overheads calculated from a run of the simulator on a trace.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SimulatorOverheads {
+    decoys_sent: usize,
+    real_sent: usize,
+    original_duration: Duration,
+    final_duration: Duration,
+}
+
+impl SimulatorOverheads {
+    /// Create a new [`SimulatorOverheads`] with the given [`MachineRuntime`] and
+    /// original + defended [`Trace`]s.
+    #[must_use]
+    pub fn new(runtime: &MachineRuntime, original_trace: &Trace, defended_trace: &Trace) -> Self {
+        Self {
+            decoys_sent: runtime.get_decoys_sent(),
+            real_sent: runtime.get_real_sent(),
+            original_duration: Duration::from_micros(
+                original_trace
+                    .timing_deltas
+                    .iter()
+                    .map(|delta| u64::from(*delta))
+                    .sum(),
+            ),
+            final_duration: Duration::from_micros(
+                defended_trace
+                    .timing_deltas
+                    .iter()
+                    .map(|delta| u64::from(*delta))
+                    .sum(),
+            ),
+        }
+    }
+
+    /// Sums all the internal fields.
+    ///
+    /// This means that absolute bandwidth and time overheads are total over the entire [`Vec`] of
+    /// [`SimulatorOverheads`], but proportional become a micro-average of overheads.
+    ///
+    /// Is [`None`] if the original iterator was empty
+    pub fn total_from(multiple: impl IntoIterator<Item = Self>) -> Option<Self> {
+        multiple.into_iter().reduce(|a, b| Self {
+            decoys_sent: a.decoys_sent + b.decoys_sent,
+            real_sent: a.real_sent + b.real_sent,
+            original_duration: a.original_duration + b.original_duration,
+            final_duration: a.final_duration + b.final_duration,
+        })
+    }
+
+    /// The absolute bandwidth overhead, defined as the number of decoy packets sent.
+    #[must_use]
+    pub fn bandwidth_abs(&self) -> usize {
+        self.decoys_sent
+    }
+
+    /// Calculates the proportional bandwidth overhead, defined as the number of decoy packets sent
+    /// over the number of real packets sent.
+    #[must_use]
+    #[expect(clippy::cast_precision_loss)]
+    pub fn bandwidth_prop(&self) -> f64 {
+        self.decoys_sent as f64 / self.real_sent as f64
+    }
+
+    /// Calculates the absolute time overhead. [`Option`] because this uses [`Duration::checked_sub`]
+    /// which could fail if either a negative time is produced or an overflow occurs.
+    #[must_use]
+    pub fn time_abs(&self) -> Option<Duration> {
+        self.final_duration.checked_sub(self.original_duration)
+    }
+
+    /// Calculates the proportional time overhead, defined as the defended duration over the
+    /// original duration.
+    #[must_use]
+    pub fn time_prop(&self) -> f64 {
+        self.final_duration.as_secs_f64() / self.original_duration.as_secs_f64()
+    }
+}
+
+impl Display for SimulatorOverheads {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Time:")?;
+        if let Some(abs) = self.time_abs() {
+            writeln!(f, "Absolute: {}μs", abs.as_micros())?;
+        } else {
+            writeln!(f, "Absolute: negative")?;
+        }
+        writeln!(f, "Proportion: {}%", self.time_prop() * 100.0)?;
+
+        writeln!(f, "Bandwidth:")?;
+        writeln!(f, "Absolute: {} packets", self.bandwidth_abs())?;
+        writeln!(f, "Proportion: {}%", self.bandwidth_prop() * 100.0)?;
+
+        Ok(())
+    }
+}
+
+/// An instance of the Chaff simulator.
+#[derive(Clone, Debug)]
+pub struct Simulator<R: Rng + CryptoRng> {
+    /// An instance of the Chaff [`Framework`] to simulate.
+    pub framework: Framework<R>,
+
+    /// The trace to simulate on ([`Simulator::queue`] is filled with this on [`Simulator::run`]).
+    trace: Trace,
+
+    /// The simulated queues, filled with a [`Trace`].
+    queue: SimulatorQueue,
+
+    /// The [`Rng`] used for [`IntegratorAction`]s.
+    rng: R,
 }
 
 impl<R: Rng + CryptoRng> Simulator<R> {
@@ -190,7 +289,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
 
     /// Run the simulation. This instantiates internal queues with the [`Simulator`]s internal
     /// [`Trace`].
-    pub fn run(&mut self) -> Trace {
+    pub fn run(&mut self) -> (Trace, SimulatorOverheads) {
         self.queue = SimulatorQueue::from(self.trace.clone());
         let mut block_state = BlockState::default();
         let mut out_builder = TraceBuilder::default();
@@ -246,7 +345,11 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             });
         }
 
-        out_builder.build()
+        let defended_trace = out_builder.build();
+        let overheads =
+            SimulatorOverheads::new(self.framework.peek_runtime(), &self.trace, &defended_trace);
+
+        (defended_trace, overheads)
     }
 }
 
