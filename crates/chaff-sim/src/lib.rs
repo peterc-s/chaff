@@ -218,11 +218,11 @@ impl Display for SimulatorOverheads {
         } else {
             writeln!(f, "Absolute: negative")?;
         }
-        writeln!(f, "Proportion: {}%", self.time_prop() * 100.0)?;
+        writeln!(f, "Proportion: {:.3}%", self.time_prop() * 100.0)?;
 
-        writeln!(f, "Bandwidth:")?;
+        writeln!(f, "\nBandwidth:")?;
         writeln!(f, "Absolute: {} packets", self.bandwidth_abs())?;
-        writeln!(f, "Proportion: {}%", self.bandwidth_prop() * 100.0)?;
+        writeln!(f, "Proportion: {:.3}%", self.bandwidth_prop() * 100.0)?;
 
         Ok(())
     }
