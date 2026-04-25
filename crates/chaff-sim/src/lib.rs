@@ -199,11 +199,12 @@ impl SimulatorOverheads {
         self.final_duration.checked_sub(self.original_duration)
     }
 
-    /// Calculates the proportional time overhead, defined as the defended duration over the
-    /// original duration.
+    /// Calculates the proportional time overhead, defined as the difference between the
+    /// defended and original durations over the original duration.
     #[must_use]
     pub fn time_prop(&self) -> f64 {
-        self.final_duration.as_secs_f64() / self.original_duration.as_secs_f64()
+        (self.final_duration.as_secs_f64() - self.original_duration.as_secs_f64())
+            / self.original_duration.as_secs_f64()
     }
 }
 
@@ -371,6 +372,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_sim_round_trip() {
         let trace = Trace {
             directions: Box::new([Direction::Send, Direction::Receive, Direction::Send]),
@@ -385,9 +387,14 @@ mod tests {
         let framework = Framework::new(machine, rand::rng());
         let mut sim: Simulator<_> = Simulator::with(framework, trace.clone(), rand::rng());
 
-        let out_trace = sim.run();
+        let (out_trace, overheads) = sim.run();
 
         assert_eq!(trace, out_trace);
+        assert_eq!(overheads.bandwidth_abs(), 0);
+        assert_eq!(overheads.real_sent, 2);
+        assert_eq!(overheads.time_abs().map(|time| time.as_nanos()), Some(0));
+        assert_eq!(overheads.time_prop(), 0.0);
+        assert_eq!(overheads.bandwidth_prop(), 0.0);
     }
 
     #[test]
@@ -416,7 +423,7 @@ mod tests {
             .unwrap();
             let framework = Framework::new(machine, rand::rng());
             let mut sim = Simulator::with(framework, in_trace.clone(), rand::rng());
-            let out_trace = sim.run();
+            let (out_trace, _) = sim.run();
 
             assert_eq!(in_trace, out_trace);
         }
@@ -494,7 +501,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv @ 10 (recorded)
@@ -552,7 +559,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 3);
         assert_eq!(out.timing_deltas[0], 0);
@@ -586,7 +593,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.timing_deltas[0], 0);
@@ -632,7 +639,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, input_trace, ChaCha20Rng::from_seed([0; 32]));
-        let output_trace = sim.run();
+        let (output_trace, _) = sim.run();
 
         // expected:
         // recv @ 0, trigger random block outgoing
@@ -659,7 +666,7 @@ mod tests {
         let framework = Framework::new(machine, rand::rng());
         let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
-        let out = sim.run();
+        let (out, _) = sim.run();
         assert!(out.directions.is_empty());
     }
 
@@ -695,7 +702,7 @@ mod tests {
             rand::rng(),
         );
 
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 2);
         assert_eq!(out.directions[0], Direction::Receive);
@@ -763,7 +770,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0s
@@ -802,7 +809,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0 (from trace)
@@ -840,7 +847,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // we don't care about order necessarily as the scheduled action and trace should happen at
         // the same time
@@ -875,7 +882,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         // expected:
         // recv@0 (from trace)
@@ -915,7 +922,7 @@ mod tests {
         };
 
         let mut sim = Simulator::with(framework, trace, rand::rng());
-        let out = sim.run();
+        let (out, _) = sim.run();
 
         assert_eq!(out.directions.len(), 1);
         assert_eq!(out.directions[0], Direction::Send);
