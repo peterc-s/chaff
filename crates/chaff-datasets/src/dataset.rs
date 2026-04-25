@@ -42,7 +42,7 @@ impl Dataset {
     }
 
     /// Dumps the dataset in Chaff trace format into a directory of separate trace files with naming
-    /// `<class_name>-<instance_num>`. Will overwrite anything with the same name.
+    /// `<class_name>-<instance_num>` (as in [`crate::parsers::chaff`]). Will overwrite anything with the same name.
     ///
     /// # Errors
     ///
