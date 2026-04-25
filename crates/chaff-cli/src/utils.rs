@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use chaff_datasets::{dataset::Dataset, parsers::tiktok};
+use chaff_datasets::{
+    dataset::Dataset,
+    parsers::{chaff, tiktok},
+};
 
 use crate::errors::CliError;
 
@@ -15,6 +18,7 @@ use crate::errors::CliError;
 pub fn parse_dataset(dataset_type: &str, input: &PathBuf) -> Result<Dataset, CliError> {
     match dataset_type.to_lowercase().as_str() {
         "tiktok" => Ok(tiktok::try_parse(input).map_err(CliError::Dataset)?),
+        "chaff" => Ok(chaff::try_parse(input).map_err(CliError::Dataset)?),
         other => Err(CliError::UnknownDatasetType(other.to_string())),
     }
 }
