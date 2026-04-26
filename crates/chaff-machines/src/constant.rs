@@ -1,4 +1,7 @@
-//! a
+//! An attempted implementation of a machine that tries to make packets flow at a constant rate.
+
+#![cfg(not(tarpaulin_include))]
+
 use std::time::Duration;
 
 use chaff::{
@@ -9,8 +12,11 @@ use chaff::{
     machine::Machine,
 };
 
+/// Construct the constant machine.
 ///
 /// # Panics
+///
+/// Should not panic unless modified.
 #[must_use]
 #[expect(clippy::expect_used)]
 pub fn construct() -> Machine {
