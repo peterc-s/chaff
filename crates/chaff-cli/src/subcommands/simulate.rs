@@ -1,7 +1,5 @@
 //! Module for the `chaff-cli sim` subcommand.
 
-#![expect(clippy::dbg_macro)]
-
 use std::{fs, path::PathBuf};
 
 use chaff::{framework::Framework, machine::Machine};
@@ -22,7 +20,6 @@ pub fn run_trace(
     output: &Option<PathBuf>,
     machine: Machine,
 ) -> Result<(), CliError> {
-    dbg!(&machine);
     let trace = Trace::deserialise(input)?;
     let framework = Framework::new(machine, rand::rng());
     let mut sim: Simulator<_> = Simulator::with(framework, trace, rand::rng());

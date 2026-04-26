@@ -1,7 +1,5 @@
 //! Contains the Chaff [`Framework`]: an instance of the Chaff library.
 
-#![expect(clippy::dbg_macro)]
-
 use std::time::Instant;
 
 use rand::{CryptoRng, Rng};
@@ -233,12 +231,7 @@ impl<R: Rng + CryptoRng> Framework<R> {
     /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
     /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
-        dbg!(&self.runtime);
-        dbg!(events);
-        dbg!(now);
         let (actions, deferred) = self.collect_actions(events, now);
-        dbg!(&actions);
-        dbg!(&deferred);
         self.runtime.deferred_events = deferred;
 
         actions
