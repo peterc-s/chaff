@@ -78,45 +78,4 @@ pub fn construct() -> Machine {
         },
     }
     .expect("predefined machine should be valid")
-
-    // machine! {
-    //     queues: [Some(1), Some(1)],
-    //     budget: Absolute(500),
-    //     state schedule_release {
-    //         action: FrameworkAction::schedule(
-    //             IntegratorAction::ReleaseBlock,
-    //             0,
-    //             hundred_ms,
-    //         ),
-    //         transitions: [
-    //             Event::QueueFilled(0) => jump,
-    //         ],
-    //     },
-    //     state jump {
-    //         transitions: [
-    //             Event::QueueFull(0) => block,
-    //         ],
-    //     },
-    //     state block {
-    //         action: IntegratorAction::BlockOutgoing(max),
-    //         transitions: [
-    //             Event::QueuePopped(0) => send_decoy,
-    //             Event::QueueEmpty(0) => send_decoy,
-    //             Event::SendBlocked => wait,
-    //             Event::SendNormal => schedule_release,
-    //         ],
-    //     },
-    //     state send_decoy {
-    //         action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, zero),
-    //         transitions: [
-    //             Event::QueueFilled(1) => schedule_release,
-    //         ]
-    //     },
-    //     state wait {
-    //         transitions: [
-    //             Event::SendNormal => schedule_release,
-    //         ]
-    //     }
-    // }
-    // .expect("premade machine shouldn't have validation issues.")
 }

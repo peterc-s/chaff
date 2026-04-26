@@ -25,7 +25,7 @@ pub fn run_trace(
     let mut sim: Simulator<_> = Simulator::with(framework, trace, rand::rng());
     let (trace, overheads) = sim.run();
 
-    // println!("{trace}");
+    println!("{trace}");
     println!("Final state: {}", sim.framework.get_state());
     println!("{overheads}");
 
