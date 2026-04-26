@@ -23,3 +23,10 @@ rand.workspace = true
 
 [dev-dependencies]
 chacha20 = { workspace = true, features = ["rng"] }
+chaff-datasets = { version = "0.1.0", path = "../chaff-datasets/" }
+chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
+criterion.workspace = true
+
+[[bench]]
+name = "sim_constant"
+harness = false

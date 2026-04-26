@@ -34,6 +34,7 @@ rand = "0.10.1"
 rand_distr = "0.6.0"
 tempfile = "3.27.0"
 chacha20 = "0.10.0"
+criterion = "0.8.2"
 
 [profile.release]
 lto = true
