@@ -240,13 +240,7 @@ impl<R: Rng + CryptoRng> Framework<R> {
                     self.perform_action(a, now);
                     None
                 }
-                Action::Integrator(a) => {
-                    if self.apply_budget(&a) {
-                        Some(a)
-                    } else {
-                        None
-                    }
-                }
+                Action::Integrator(a) => self.apply_budget(&a).then_some(a),
             })
             .collect()
     }
