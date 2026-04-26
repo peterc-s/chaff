@@ -64,6 +64,18 @@ impl Timed for TimedAction {
     }
 }
 
+/// Status from pushing to a [`TimedQueue`]
+pub enum QueuePushStatus {
+    /// Push successful.
+    Pushed,
+
+    /// Push successful but queue now full.
+    PushedButFull,
+
+    /// Push unsuccessful as queue full.
+    Full,
+}
+
 /// A priority queue of [`Scheduled`] objects, ordered by their [`Timed::execute_at`]. Under the hood
 /// this is just a [`BinaryHeap<Scheduled<T>>`].
 #[derive(Debug, Clone, Default)]
@@ -84,14 +96,20 @@ impl<T: Timed> TimedQueue<T> {
 
     /// Push an item onto the [`TimedQueue`].
     #[must_use]
-    pub fn push(&mut self, item: T) -> bool {
+    pub fn push(&mut self, item: T) -> QueuePushStatus {
         if let Some(capacity) = self.capacity
             && self.queue.len() >= capacity
         {
-            false
+            QueuePushStatus::Full
         } else {
             self.queue.push(Scheduled(item));
-            true
+            if let Some(capacity) = self.capacity
+                && self.queue.len() >= capacity
+            {
+                QueuePushStatus::PushedButFull
+            } else {
+                QueuePushStatus::Pushed
+            }
         }
     }
 

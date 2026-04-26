@@ -6,24 +6,32 @@ use chaff_capture::trace::{Direction, Trace};
 
 use crate::errors::CliError;
 
+use iterstats::Iterstats as _;
+
 /// Run the trace stats subcommand with the given trace.
 ///
 /// # Errors
 ///
 /// - If deserialising the trace fails [`Trace::deserialise`].
-#[expect(clippy::cast_precision_loss)]
 #[expect(clippy::similar_names)]
 pub fn run(input: &PathBuf) -> Result<(), CliError> {
     let trace = Trace::deserialise(&input)?;
     let deltas = trace.timing_deltas();
+    let sizes = trace.sizes();
     let total = trace.len();
+
     let sent = trace
         .directions()
         .iter()
         .filter(|direction| **direction == Direction::Send)
         .count();
-    let avg_delta = f64::from(deltas.iter().sum::<u32>()) / total as f64;
-    let avg_size = f64::from(trace.sizes().iter().sum::<u32>()) / total as f64;
+
+    let avg_delta = deltas.iter().map(|delta| f64::from(*delta)).mean();
+    let std_delta = deltas.iter().map(|delta| f64::from(*delta)).stddev();
+
+    let avg_size = sizes.iter().map(|size| f64::from(*size)).mean();
+    let std_size = sizes.iter().map(|size| f64::from(*size)).stddev();
+
     let largest_burst_0mus = deltas
         .split(|&delta| delta != 0)
         .map(<[u32]>::len)
@@ -61,8 +69,8 @@ pub fn run(input: &PathBuf) -> Result<(), CliError> {
     println!("Packets: {total}");
     println!("Sent: {sent}");
     println!("Received: {}", total - sent);
-    println!("Average packet size: {avg_size:.2} bytes");
-    println!("Average time delta: {avg_delta:.2}μs");
+    println!("Average packet size: {avg_size:.2}±{std_size:.2} bytes");
+    println!("Average time delta: {avg_delta:.2}±{std_delta:.2}μs");
     println!("Largest time delta: {largest_delta}μs");
     println!("Largest burst (0μs): {largest_burst_0mus} packets");
     println!("Largest burst (100μs): {largest_burst_100mus} packets");

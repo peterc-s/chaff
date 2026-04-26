@@ -45,7 +45,7 @@ impl FrameworkAction {
     feature = "borsh",
     derive(borsh::BorshSerialize, borsh::BorshDeserialize)
 )]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IntegratorAction {
     /// Send a decoy packet.
     SendDecoy,

@@ -9,7 +9,7 @@ use crate::{
     action::{Action, FrameworkAction, IntegratorAction},
     event::Event,
     machine::{Machine, MachineDecoyBudget, MachineRuntime},
-    queue::{TimedAction, TimedQueue},
+    queue::{QueuePushStatus, TimedAction, TimedQueue},
     state::TransitionProbs,
 };
 
@@ -57,11 +57,19 @@ impl<R: Rng + CryptoRng> Framework<R> {
                 queue,
                 delay,
             } => {
-                if !self.runtime.queues[queue as usize].push(TimedAction {
+                match self.runtime.queues[queue as usize].push(TimedAction {
                     execute_at: now + delay.sample(&mut self.rng),
                     action: int_action.into(),
                 }) {
-                    self.runtime.deferred_events.push(Event::QueueFull(queue));
+                    QueuePushStatus::Pushed => {
+                        self.runtime.deferred_events.push(Event::QueuePushed(queue));
+                    }
+                    QueuePushStatus::PushedButFull => {
+                        self.runtime.deferred_events.push(Event::QueueFilled(queue));
+                    }
+                    QueuePushStatus::Full => {
+                        self.runtime.deferred_events.push(Event::QueueFull(queue));
+                    }
                 }
             }
             FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),

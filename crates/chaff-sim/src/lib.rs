@@ -1,4 +1,5 @@
 //! The Chaff simulator for creating defended traces with machines.
+
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, VecDeque},
@@ -314,6 +315,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             for event in &events_now {
                 if event.event == Event::SendNormal && block_state.is_active_at(event.time) {
                     block_state.buffer(event.clone());
+                    buffered_events.push(Event::SendBlocked);
                     continue;
                 }
 

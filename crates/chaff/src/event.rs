@@ -22,10 +22,19 @@ pub enum Event {
     /// Decoy packet received (ingress). Emitted by integrator.
     ReceiveDecoy,
 
+    /// Packet blocked from sending. Emitted by framework.
+    SendBlocked,
+
     /// Given queue was popped. Emitted by framework.
     QueuePopped(u8),
 
-    /// Given queue has reached capacity. Emitted by framework.
+    /// Given queue was pushed to. Emitted by framework.
+    QueuePushed(u8),
+
+    /// Given queue was pushed to but has been filled. Emitted by framework.
+    QueueFilled(u8),
+
+    /// Given queue is already at capacity. Emitted by framework.
     QueueFull(u8),
 
     /// Given queue has emptied. Emitted by framework.
@@ -53,11 +62,14 @@ impl Event {
             Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,
             Self::QueuePopped(_)
             | Self::QueueFull(_)
+            | Self::QueueFilled(_)
+            | Self::QueuePushed(_)
             | Self::StateBudgetExhausted
             | Self::MachineBudgetExhausted
             | Self::MachineBudgetReached
             | Self::MachineBudgetRecovered
-            | Self::QueueEmpty(_) => true,
+            | Self::QueueEmpty(_)
+            | Self::SendBlocked => true,
         }
     }
 }

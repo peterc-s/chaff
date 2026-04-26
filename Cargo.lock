@@ -159,6 +159,7 @@ dependencies = [
  "chaff-datasets",
  "chaff-machines",
  "chaff-sim",
+ "iterstats",
  "mac_address",
  "pcap",
  "rand",
@@ -342,6 +343,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "iterstats"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ea8ea10912cb6c0e34dfb7f2c5fbb9d03d1611b1651dfc9754e08c8185ec9d3"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]

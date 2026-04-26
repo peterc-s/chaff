@@ -106,6 +106,9 @@ impl Machine {
             errors.push(ValidationError::NegativeProportion(percent));
         }
 
+        // TODO: maybe validate transitions too, i.e. no point in having a QueueFilled(10)
+        // transition when there's only 10 queues.
+
         #[expect(clippy::expect_used)]
         match errors.len() {
             0 => Ok(()),
