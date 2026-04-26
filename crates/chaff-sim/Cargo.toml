@@ -28,5 +28,5 @@ chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 criterion.workspace = true
 
 [[bench]]
-name = "sim_constant"
+name = "tiktok_undefended"
 harness = false
