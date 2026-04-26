@@ -1,4 +1,7 @@
 //! The Chaff simulator for creating defended traces with machines.
+
+#![expect(clippy::dbg_macro)]
+
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, VecDeque},
@@ -264,6 +267,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
     /// Get the next earliest "event" time (in the sense that something needs to be handled at that
     /// time). Will return [`Some(0)`] if the framework hasn't done its initial process yet.
     fn next_earliest_time(&self, block_state: &BlockState, base_instant: Instant) -> Option<u64> {
+        dbg!(&block_state);
         if !self.framework.is_initialised() {
             return Some(0);
         }
@@ -287,6 +291,8 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             candidate = candidate.map_or(Some(runtime_ts), |curr| Some(curr.min(runtime_ts)));
         }
 
+        dbg!(candidate);
+
         candidate
     }
 
@@ -299,9 +305,11 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         let base_instant = Instant::now();
 
         while let Some(sim_now) = self.next_earliest_time(&block_state, base_instant) {
+            dbg!(&block_state);
             if block_state.until.is_some_and(|until| until <= sim_now) {
                 self.queue.extend(block_state.release(sim_now));
             }
+            dbg!(&block_state);
 
             let mut events_now = Vec::new();
             while self.queue.peek_time().is_some_and(|t| t == sim_now) {
@@ -314,6 +322,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
             for event in &events_now {
                 if event.event == Event::SendNormal && block_state.is_active_at(event.time) {
                     block_state.buffer(event.clone());
+                    buffered_events.push(Event::SendBlocked);
                     continue;
                 }
 
@@ -340,10 +349,14 @@ impl<R: Rng + CryptoRng> Simulator<R> {
                 IntegratorAction::BlockOutgoing(duration) => {
                     #[expect(clippy::cast_possible_truncation)]
                     let end_ts = sim_now + duration.sample(&mut self.rng).as_micros() as u64;
+                    dbg!(end_ts);
                     block_state.block(end_ts);
+                    dbg!(&block_state);
                 }
                 IntegratorAction::ReleaseBlock => {
+                    dbg!(&block_state);
                     self.queue.extend(block_state.release(sim_now));
+                    dbg!(&block_state);
                 }
             });
         }

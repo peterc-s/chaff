@@ -13,7 +13,7 @@ use chaff_cli::{
     errors::CliError,
     subcommands::{cap_convert, capture, dataset_convert, dataset_stats, simulate, trace_stats},
 };
-use chaff_machines::test::construct_test_machine;
+use chaff_machines::constant;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -150,7 +150,7 @@ fn run() -> Result<(), CliError> {
                 let mut file = File::open(path)?;
                 Machine::deserialize_reader(&mut file)?
             } else {
-                construct_test_machine()
+                constant::construct()
             };
 
             match action {

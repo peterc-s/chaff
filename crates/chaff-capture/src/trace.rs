@@ -29,11 +29,14 @@ impl TryFrom<Event> for Direction {
             Event::ReceiveNormal | Event::ReceiveDecoy => Ok(Self::Receive),
             Event::QueuePopped(_)
             | Event::QueueFull(_)
+            | Event::QueueFilled(_)
+            | Event::QueuePushed(_)
             | Event::StateBudgetExhausted
             | Event::MachineBudgetExhausted
             | Event::MachineBudgetReached
             | Event::MachineBudgetRecovered
-            | Event::QueueEmpty(_) => Err(CaptureError::CantConvert),
+            | Event::QueueEmpty(_)
+            | Event::SendBlocked => Err(CaptureError::CantConvert),
         }
     }
 }

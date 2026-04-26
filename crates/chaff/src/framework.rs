@@ -1,5 +1,7 @@
 //! Contains the Chaff [`Framework`]: an instance of the Chaff library.
 
+#![expect(clippy::dbg_macro)]
+
 use std::time::Instant;
 
 use rand::{CryptoRng, Rng};
@@ -7,9 +9,10 @@ use rand_distr::Distribution as _;
 
 use crate::{
     action::{Action, FrameworkAction, IntegratorAction},
+    // distr::{ActiveDistr, DistrKind},
     event::Event,
     machine::{Machine, MachineDecoyBudget, MachineRuntime},
-    queue::{TimedAction, TimedQueue},
+    queue::{QueuePushStatus, TimedAction, TimedQueue},
     state::TransitionProbs,
 };
 
@@ -57,11 +60,19 @@ impl<R: Rng + CryptoRng> Framework<R> {
                 queue,
                 delay,
             } => {
-                if !self.runtime.queues[queue as usize].push(TimedAction {
+                match self.runtime.queues[queue as usize].push(TimedAction {
                     execute_at: now + delay.sample(&mut self.rng),
                     action: int_action.into(),
                 }) {
-                    self.runtime.deferred_events.push(Event::QueueFull(queue));
+                    QueuePushStatus::Pushed => {
+                        self.runtime.deferred_events.push(Event::QueuePushed(queue));
+                    }
+                    QueuePushStatus::PushedButFull => {
+                        self.runtime.deferred_events.push(Event::QueueFilled(queue));
+                    }
+                    QueuePushStatus::Full => {
+                        self.runtime.deferred_events.push(Event::QueueFull(queue));
+                    }
                 }
             }
             FrameworkAction::CancelQueue(queue) => self.runtime.queues[queue as usize].cancel(),
@@ -222,7 +233,12 @@ impl<R: Rng + CryptoRng> Framework<R> {
     /// Entering states with `0` budget will immediately cause a deferred [`Event::StateBudgetExhausted`]
     /// event to be emitted by the framework.
     pub fn process(&mut self, events: &[Event], now: Instant) -> Box<[IntegratorAction]> {
+        dbg!(&self.runtime);
+        dbg!(events);
+        dbg!(now);
         let (actions, deferred) = self.collect_actions(events, now);
+        dbg!(&actions);
+        dbg!(&deferred);
         self.runtime.deferred_events = deferred;
 
         actions
@@ -232,7 +248,13 @@ impl<R: Rng + CryptoRng> Framework<R> {
                     self.perform_action(a, now);
                     None
                 }
-                Action::Integrator(a) => self.apply_budget(&a).then_some(a),
+                Action::Integrator(a) => {
+                    if self.apply_budget(&a) {
+                        Some(a)
+                    } else {
+                        None
+                    }
+                }
             })
             .collect()
     }
