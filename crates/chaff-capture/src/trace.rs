@@ -67,7 +67,8 @@ impl TraceBuilder {
     pub fn record(&mut self, dir: Direction, time: u64, size: u32) {
         self.directions.push(dir);
         #[expect(clippy::cast_possible_truncation)]
-        self.timing_deltas.push((time - self.last_ts) as u32);
+        self.timing_deltas
+            .push(time.saturating_sub(self.last_ts) as u32);
         self.sizes.push(size);
         self.last_ts = time;
     }
