@@ -12,6 +12,7 @@ use chaff::machine::Machine;
 use chaff_cli::{
     errors::CliError,
     subcommands::{cap_convert, capture, dataset_convert, dataset_stats, simulate, trace_stats},
+    utils::parse_dataset,
 };
 use chaff_machines::constant;
 
@@ -159,7 +160,10 @@ fn run() -> Result<(), CliError> {
                     output,
                     input,
                     dataset_type,
-                } => simulate::run_dataset(&input, &dataset_type, &output, machine),
+                } => {
+                    let input_dataset = parse_dataset(&dataset_type, &input)?;
+                    simulate::run_dataset(&input_dataset, &output, &machine)
+                }
             }
         }
         CliOptions::CapConvert { pcap, trace, mac } => cap_convert::run(mac, &pcap, &trace),
