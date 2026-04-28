@@ -43,7 +43,7 @@ pub enum CliOptions {
     /// Get statistics about a dataset.
     #[bpaf(command("dataset-stats"))]
     DatasetStats {
-        /// The type of dataset (available: tiktok).
+        /// The type of dataset (available: chaff, tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
 
@@ -87,7 +87,7 @@ pub enum CliOptions {
         #[bpaf(short, long)]
         output: Option<PathBuf>,
 
-        /// The type of dataset (available: tiktok).
+        /// The type of dataset (available: chaff, tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
 
@@ -119,7 +119,7 @@ pub enum Sim {
         #[bpaf(short, long)]
         output: Option<PathBuf>,
 
-        /// The type of dataset (available: tiktok).
+        /// The type of dataset (available: chaff, tiktok).
         #[bpaf(positional("TYPE"))]
         dataset_type: String,
 
