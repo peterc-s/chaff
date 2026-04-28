@@ -76,6 +76,7 @@
           cargo-nextest
           cargo-outdated
           cargo-tarpaulin
+          gnuplot
         ];
 
         allFeatures = x: x ++ ["--all-features"];

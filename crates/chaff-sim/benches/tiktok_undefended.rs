@@ -70,7 +70,7 @@ fn double(c: &mut Criterion) {
 
 criterion_group!(
     name = tiktok_undefended;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(20);
     targets = constant, no_op, double
 );
 criterion_main!(tiktok_undefended);
