@@ -25,6 +25,7 @@ rand.workspace = true
 chacha20 = { workspace = true, features = ["rng"] }
 chaff-datasets = { version = "0.1.0", path = "../chaff-datasets/" }
 chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
+chaff-cli = { version = "0.1.0", path = "../chaff-cli/" }
 criterion.workspace = true
 
 [[bench]]

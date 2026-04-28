@@ -54,7 +54,7 @@ pub fn run_dataset(
     dataset: &Dataset,
     output: &Option<PathBuf>,
     machine: &Machine,
-) -> Result<(), CliError> {
+) -> Result<Option<SimulatorOverheads>, CliError> {
     let input_data = dataset.get_dataset();
     let mut output_dataset_builder = DatasetBuilder::new(dataset.get_pad_to());
 
@@ -69,7 +69,7 @@ pub fn run_dataset(
     let work_queue = Arc::new(Mutex::new(tasks.into_iter()));
     let (tx, rx) = mpsc::channel();
 
-    thread::scope(|s| {
+    let overheads = thread::scope(|s| {
         for _ in 0..num_threads {
             let thread_tx = tx.clone();
             let thread_machine = machine.clone();
@@ -111,10 +111,7 @@ pub fn run_dataset(
             overheads.push(overhead);
         }
 
-        let overheads_total = SimulatorOverheads::total_from(overheads);
-        if let Some(total) = overheads_total {
-            println!("{total}");
-        }
+        SimulatorOverheads::total_from(overheads)
     });
 
     if let Some(output) = output {
@@ -125,5 +122,5 @@ pub fn run_dataset(
         output_dataset_builder.build().dump_to(output)?;
     }
 
-    Ok(())
+    Ok(overheads)
 }

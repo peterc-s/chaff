@@ -162,7 +162,18 @@ fn run() -> Result<(), CliError> {
                     dataset_type,
                 } => {
                     let input_dataset = parse_dataset(&dataset_type, &input)?;
-                    simulate::run_dataset(&input_dataset, &output, &machine)
+                    let overheads = simulate::run_dataset(&input_dataset, &output, &machine)?;
+                    if let Some(overheads) = overheads {
+                        println!(
+                            "Overall time overhead: {}μs",
+                            overheads.time_abs().unwrap_or_default().as_micros()
+                        );
+                        println!(
+                            "Overall bandwidth overhead: {} packets",
+                            overheads.bandwidth_abs()
+                        );
+                    }
+                    Ok(())
                 }
             }
         }

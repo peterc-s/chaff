@@ -220,6 +220,7 @@ dependencies = [
  "chacha20",
  "chaff",
  "chaff-capture",
+ "chaff-cli",
  "chaff-datasets",
  "chaff-machines",
  "criterion",

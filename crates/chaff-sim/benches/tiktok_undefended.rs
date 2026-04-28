@@ -3,11 +3,10 @@
 
 #![expect(clippy::unwrap_used)]
 
-use ::chaff::{action::IntegratorAction, event::Event, framework::Framework, machine};
-use chaff_capture::trace::Trace;
-use chaff_datasets::{dataset::DatasetBuilder, parsers::chaff};
+use ::chaff::{action::IntegratorAction, event::Event, machine};
+use chaff_cli::subcommands::simulate;
+use chaff_datasets::parsers::chaff;
 use chaff_machines::constant;
-use chaff_sim::{Simulator, SimulatorOverheads};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::{hint::black_box, path::Path};
 
@@ -19,30 +18,10 @@ fn constant(c: &mut Criterion) {
         .unwrap()
         .join("data/tik_tok_undefended.chaff");
     let dataset = chaff::try_parse(dataset_dir).unwrap();
-
-    let data = dataset.get_dataset();
-    let mut output_dataset_builder = DatasetBuilder::new(dataset.get_pad_to());
-
     let machine = constant::construct();
-    let framework = Framework::new(machine, rand::rng());
-    let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
     c.bench_function("tiktok undefended const", |b| {
-        b.iter(|| {
-            let mut overheads = Vec::with_capacity(data.len());
-
-            for (class, traces) in data {
-                for trace in traces {
-                    sim.replace_trace(black_box(trace.clone()));
-                    let (trace, overhead) = sim.run();
-                    output_dataset_builder.push_to_class(class, trace);
-                    overheads.push(overhead);
-                }
-            }
-
-            let overheads = SimulatorOverheads::total_from(overheads);
-            black_box(overheads);
-        });
+        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
     });
 }
 
@@ -54,34 +33,14 @@ fn no_op(c: &mut Criterion) {
         .unwrap()
         .join("data/tik_tok_undefended.chaff");
     let dataset = chaff::try_parse(dataset_dir).unwrap();
-
-    let data = dataset.get_dataset();
-    let mut output_dataset_builder = DatasetBuilder::new(dataset.get_pad_to());
-
     let machine = machine! {
         queues: [],
         state init {},
     }
     .unwrap();
-    let framework = Framework::new(machine, rand::rng());
-    let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
     c.bench_function("tiktok undefended no_op", |b| {
-        b.iter(|| {
-            let mut overheads = Vec::with_capacity(data.len());
-
-            for (class, traces) in data {
-                for trace in traces {
-                    sim.replace_trace(black_box(trace.clone()));
-                    let (trace, overhead) = sim.run();
-                    output_dataset_builder.push_to_class(class, trace);
-                    overheads.push(overhead);
-                }
-            }
-
-            let overheads = SimulatorOverheads::total_from(overheads);
-            black_box(overheads);
-        });
+        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
     });
 }
 
@@ -93,10 +52,6 @@ fn double(c: &mut Criterion) {
         .unwrap()
         .join("data/tik_tok_undefended.chaff");
     let dataset = chaff::try_parse(dataset_dir).unwrap();
-
-    let data = dataset.get_dataset();
-    let mut output_dataset_builder = DatasetBuilder::new(dataset.get_pad_to());
-
     let machine = machine! {
         queues: [],
         state double {
@@ -107,25 +62,9 @@ fn double(c: &mut Criterion) {
         },
     }
     .unwrap();
-    let framework = Framework::new(machine, rand::rng());
-    let mut sim = Simulator::with(framework, Trace::default(), rand::rng());
 
     c.bench_function("tiktok undefended double", |b| {
-        b.iter(|| {
-            let mut overheads = Vec::with_capacity(data.len());
-
-            for (class, traces) in data {
-                for trace in traces {
-                    sim.replace_trace(black_box(trace.clone()));
-                    let (trace, overhead) = sim.run();
-                    output_dataset_builder.push_to_class(class, trace);
-                    overheads.push(overhead);
-                }
-            }
-
-            let overheads = SimulatorOverheads::total_from(overheads);
-            black_box(overheads);
-        });
+        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
     });
 }
 
