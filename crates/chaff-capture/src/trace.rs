@@ -36,7 +36,8 @@ impl TryFrom<Event> for Direction {
             | Event::MachineBudgetReached
             | Event::MachineBudgetRecovered
             | Event::QueueEmpty(_)
-            | Event::SendBlocked => Err(CaptureError::CantConvert),
+            | Event::SendBlocked
+            | Event::BlockReleased => Err(CaptureError::CantConvert),
         }
     }
 }

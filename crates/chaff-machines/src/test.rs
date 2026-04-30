@@ -25,8 +25,8 @@ pub fn construct_test_machine() -> Machine {
 
     Machine::try_new(
         vec![
-            State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
-            State::new(None, Some(IntegratorAction::SendDecoy), None),
+            State::new(Some(trans_probs), [IntegratorAction::SendDecoy], None),
+            State::new(None, [IntegratorAction::SendDecoy], None),
         ],
         [None],
         None,

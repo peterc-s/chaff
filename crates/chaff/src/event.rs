@@ -22,6 +22,9 @@ pub enum Event {
     /// Decoy packet received (ingress). Emitted by integrator.
     ReceiveDecoy,
 
+    /// Blocking released. Emitted by integrator.
+    BlockReleased,
+
     /// Packet blocked from sending. Emitted by framework.
     SendBlocked,
 
@@ -59,7 +62,11 @@ impl Event {
     #[must_use]
     pub fn is_deferred(&self) -> bool {
         match self {
-            Self::SendNormal | Self::ReceiveNormal | Self::SendDecoy | Self::ReceiveDecoy => false,
+            Self::SendNormal
+            | Self::ReceiveNormal
+            | Self::SendDecoy
+            | Self::ReceiveDecoy
+            | Self::BlockReleased => false,
             Self::QueuePopped(_)
             | Self::QueueFull(_)
             | Self::QueueFilled(_)
