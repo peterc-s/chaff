@@ -5,16 +5,19 @@
 #![cfg(not(tarpaulin_include))]
 
 use borsh::BorshDeserialize as _;
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf, time::Duration};
 
 use bpaf::Bpaf;
-use chaff::machine::Machine;
+use chaff::{
+    distr::{Distr, DistrKind},
+    machine::Machine,
+};
 use chaff_cli::{
     errors::CliError,
     subcommands::{cap_convert, capture, dataset_convert, dataset_stats, simulate, trace_stats},
     utils::parse_dataset,
 };
-use chaff_machines::constant;
+use chaff_machines::wtf_pad_lite;
 
 /// Command-line interface options
 #[derive(Debug, Clone, Bpaf)]
@@ -147,11 +150,20 @@ fn run() -> Result<(), CliError> {
         CliOptions::TraceStats { input } => trace_stats::run(&input),
         CliOptions::DatasetStats { dataset_type, path } => dataset_stats::run(&dataset_type, &path),
         CliOptions::Simulate { action, machine } => {
+            #[expect(clippy::unwrap_used)]
             let machine = if let Some(path) = machine {
                 let mut file = File::open(path)?;
                 Machine::deserialize_reader(&mut file)?
             } else {
-                constant::construct()
+                // constant::construct()
+                let delay_distr: Distr = DistrKind::Normal {
+                    mean: 0.015,
+                    std_dev: 0.05,
+                }
+                .try_into()
+                .unwrap();
+                let timeout: Distr = Duration::from_secs_f64(1.0).try_into().unwrap();
+                wtf_pad_lite::construct(delay_distr, timeout)
             };
 
             match action {

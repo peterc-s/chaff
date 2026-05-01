@@ -17,6 +17,7 @@ use chaff::{
 ///
 /// This defence does not do both burst and gap level padding, has different stop conditions, and a
 /// different way of sampling distributions.
+///
 /// # Panics
 ///
 /// Shouldn't panic unless modified.
@@ -96,5 +97,5 @@ pub fn construct(
             actions: [FrameworkAction::CancelAll],
         }
     }
-    .expect("preconstructed machine should be valid")
+    .expect("premade machine with valid distrs was invalid")
 }
