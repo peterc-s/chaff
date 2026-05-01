@@ -23,7 +23,7 @@ Chaff is a website fingerprinting (WF) defence framework inspired by Maybenot[^1
 
 ### Why experimental?
 
-The reason why Chaff is experimental is because it is unproven. Chaff hasn't been integrated into any existing privacy-enhancing technologies, it is still missing a host of features that would make it complete, and it might not even work that well. One of the key aims for Chaff was to evaluate if the queue machine model is valid and/or useful for developing safe WF defences. 
+The reason why Chaff is experimental is because it is unproven. Chaff hasn't been integrated into any existing privacy-enhancing technologies, it is still missing a host of features that would make it complete, and your mileage may vary. One of the key aims for Chaff was to evaluate if the queue machine model is valid and/or useful for developing safe WF defences. 
 
 ### Why Chaff?
 
@@ -57,6 +57,27 @@ nix build
 ```
 
 The resulting artefacts will be put in `result/`.
+
+If you don't want to use Nix, you can use `cargo` directly, but you may need external libraries such as `libpcap`:
+
+```sh
+cargo build --release
+```
+
+To use the command line:
+
+```sh
+cargo run --release -- --help
+```
+
+To install:
+
+```sh
+cargo install --path ./crates/chaff-cli/
+
+# then
+chaff-cli --help
+```
 
 ## Development
 
