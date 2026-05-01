@@ -960,13 +960,18 @@ mod tests {
 
     #[cfg(test)]
     mod machines {
+        use std::time::Duration;
+
         use super::Simulator;
-        use chaff::framework::Framework;
+        use chaff::{
+            distr::{Distr, DistrKind},
+            framework::Framework,
+        };
         use chaff_capture::trace::{Direction, Trace};
-        use chaff_machines::constant;
+        use chaff_machines::{constant, wtf_pad_lite};
 
         #[test]
-        pub fn test_constant_machine() {
+        pub fn test_constant() {
             let machine = constant::construct();
             let framework = Framework::new(machine, rand::rng());
             let trace = Trace::new(
@@ -988,6 +993,49 @@ mod tests {
                 "found poorly spaced deltas: {deltas:?}",
             );
             assert!(out.len() < 35, "len: {}", out.len());
+        }
+
+        #[test]
+        pub fn test_wtf_pad_lite() {
+            let delay_distr: Distr = DistrKind::Normal {
+                mean: 0.015,
+                std_dev: 0.05,
+            }
+            .try_into()
+            .unwrap();
+
+            let timeout: Distr = Duration::from_secs_f64(0.4).try_into().unwrap();
+
+            let machine = wtf_pad_lite::construct(delay_distr, timeout);
+            let framework = Framework::new(machine, rand::rng());
+            let trace = Trace::new(
+                [Direction::Send; 7],
+                [0, 123, 100_000, 200_000, 104, 204_213, 1_000_000],
+                [0; 7],
+            );
+            let mut simulator = Simulator::with(framework, trace, rand::rng());
+            let (out, _) = simulator.run();
+
+            assert!(out.len() < 75, "len: {}", out.len());
+        }
+
+        #[test]
+        pub fn test_wtf_pad_lite_constant() {
+            let delay_distr: Distr = Duration::from_millis(20).try_into().unwrap();
+            let timeout: Distr = Duration::from_secs_f64(0.4).try_into().unwrap();
+
+            let machine = wtf_pad_lite::construct(delay_distr, timeout);
+            let framework = Framework::new(machine, rand::rng());
+            let trace = Trace::new(
+                [Direction::Send; 7],
+                [0, 123, 100_000, 200_000, 104, 204_213, 399_999],
+                [0; 7],
+            );
+            let mut simulator = Simulator::with(framework, trace, rand::rng());
+            let (out, _) = simulator.run();
+
+            assert_eq!(out.len(), 81);
+            assert!(!out.timing_deltas().iter().any(|delta| *delta > 20_000));
         }
     }
 }

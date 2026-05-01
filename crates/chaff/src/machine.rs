@@ -155,6 +155,7 @@ impl borsh::BorshDeserialize for Machine {
             borsh::BorshDeserialize::deserialize_reader(reader)?;
 
         Self::validate(&states, queues.len(), budget).map_err(|err| {
+            // TODO: coverage for this was broken while making fixes before deadline. fix coverage.
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{err:?}"))
         })?;
 

@@ -1,4 +1,4 @@
-//! An attempted implementation of a machine that tries to make packets flow at a constant rate.
+//! A machine that sends bursts at a constant rate.
 
 #![cfg(not(tarpaulin_include))]
 
