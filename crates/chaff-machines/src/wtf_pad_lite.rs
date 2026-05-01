@@ -3,6 +3,8 @@
 //! This defence does not do both burst and gap level padding, has different stop conditions, and a
 //! different way of sampling distributions.
 
+#![cfg(not(tarpaulin_include))]
+
 use chaff::{
     action::{FrameworkAction, IntegratorAction},
     distr::Distr,
