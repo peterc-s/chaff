@@ -102,5 +102,9 @@ Which is what the CI/CD pipeline does.
 
 Chaff uses aggressive `clippy` lints and should compile with `-Wpedantic`. It also aims for 100% coverage via [`cargo-tarpaulin`](https://github.com/xd009642/tarpaulin) using the LLVM backend. There are some false positives, currently they are not being ignored with attributes: if code changes within the scope of the attribute and is no longer covered, you couldn't tell.
 
+## Datasets
+
+By convention, datasets should go in `data/`. See [`chaff-datasets`](./crates/chaff-datasets/README.md) and [`chaff-sim`](./crates/chaff-sim/README.md) for information on acquiring the Tik-Tok dataset.
+
 [^1]: https://github.com/maybenot-io/maybenot/tree/main
 [^2]: https://gitlab.torproject.org/tpo/core/tor/-/blob/main/doc/HACKING/CircuitPaddingDevelopment.md
