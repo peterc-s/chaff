@@ -299,19 +299,27 @@ impl<R: Rng + CryptoRng> Simulator<R> {
         let mut out_builder = TraceBuilder::default();
         let base_instant = Instant::now();
 
+        let mut buffered_events = Vec::new();
         while let Some(sim_now) = self.next_earliest_time(&block_state, base_instant) {
-            if block_state.until.is_some_and(|until| until <= sim_now) {
+            let block_released = if block_state.until.is_some_and(|until| until <= sim_now) {
                 self.queue.extend(block_state.release(sim_now));
-            }
+                true
+            } else {
+                false
+            };
 
             let mut events_now = Vec::new();
-            while self.queue.peek_time().is_some_and(|t| t == sim_now) {
-                if let Some(event) = self.queue.pop() {
-                    events_now.push(event);
+            if self.framework.is_initialised() {
+                while self.queue.peek_time().is_some_and(|t| t == sim_now) {
+                    if let Some(event) = self.queue.pop() {
+                        events_now.push(event);
+                    }
                 }
             }
 
-            let mut buffered_events = Vec::with_capacity(events_now.len());
+            if block_released {
+                buffered_events.push(Event::BlockReleased);
+            }
             for event in &events_now {
                 if event.event == Event::SendNormal && block_state.is_active_at(event.time) {
                     block_state.buffer(event.clone());
@@ -330,6 +338,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
 
             let sim_instant = base_instant + Duration::from_micros(sim_now);
             let actions = self.framework.process(&buffered_events, sim_instant);
+            buffered_events.clear();
 
             actions.into_iter().for_each(|action| match action {
                 IntegratorAction::SendDecoy => {
@@ -346,6 +355,7 @@ impl<R: Rng + CryptoRng> Simulator<R> {
                 }
                 IntegratorAction::ReleaseBlock => {
                     self.queue.extend(block_state.release(sim_now));
+                    buffered_events.push(Event::BlockReleased);
                 }
             });
         }
@@ -480,17 +490,13 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(
-                    Some(trans_0_to_1),
-                    Some(IntegratorAction::ReleaseBlock),
-                    None,
-                ),
+                State::new(Some(trans_0_to_1), [IntegratorAction::ReleaseBlock], None),
                 State::new(
                     Some(trans_1_to_2),
-                    Some(IntegratorAction::block_outgoing(long_delay)),
+                    [IntegratorAction::block_outgoing(long_delay)],
                     None,
                 ),
-                State::new(None, Some(IntegratorAction::ReleaseBlock), None),
+                State::new(None, [IntegratorAction::ReleaseBlock], None),
             ],
             [],
             None,
@@ -546,12 +552,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
-                State::new(
-                    None,
-                    Some(IntegratorAction::block_outgoing(long_delay)),
-                    None,
-                ),
+                State::new(Some(trans), [IntegratorAction::ReleaseBlock], None),
+                State::new(None, [IntegratorAction::block_outgoing(long_delay)], None),
             ],
             [],
             None,
@@ -591,8 +593,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
-                State::new(None, Some(IntegratorAction::SendDecoy), None),
+                State::new(Some(trans), [IntegratorAction::ReleaseBlock], None),
+                State::new(None, [IntegratorAction::SendDecoy], None),
             ],
             [],
             None,
@@ -638,12 +640,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(
-                    Some(trans_0_to_1),
-                    Some(IntegratorAction::ReleaseBlock),
-                    None,
-                ),
-                State::new(None, Some(IntegratorAction::BlockOutgoing(uniform)), None),
+                State::new(Some(trans_0_to_1), [IntegratorAction::ReleaseBlock], None),
+                State::new(None, [IntegratorAction::BlockOutgoing(uniform)], None),
             ],
             [],
             None,
@@ -704,12 +702,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans), Some(IntegratorAction::ReleaseBlock), None),
-                State::new(
-                    None,
-                    Some(IntegratorAction::block_outgoing(long_delay)),
-                    None,
-                ),
+                State::new(Some(trans), [IntegratorAction::ReleaseBlock], None),
+                State::new(None, [IntegratorAction::block_outgoing(long_delay)], None),
             ],
             [],
             None,
@@ -744,7 +738,7 @@ mod tests {
         let machine = machine! {
             queues: [],
             state dummy {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -771,11 +765,11 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(delay_secs).try_into().unwrap()
-                ),
+                )],
             }
         }
         .unwrap();
@@ -814,11 +808,11 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(0.0).try_into().unwrap()
-                ),
+                )],
             }
         }
         .unwrap();
@@ -856,11 +850,11 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(1.0).try_into().unwrap()
-                ),
+                )],
             }
         }
         .unwrap();
@@ -896,11 +890,11 @@ mod tests {
         let machine = machine! {
             queues: [None; 2],
             state init {
-                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, delay),
+                actions: [FrameworkAction::schedule(IntegratorAction::SendDecoy, 0, delay)],
                 transitions: [Event::ReceiveNormal => schedule_second]
             },
             state schedule_second {
-                action: FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, delay),
+                actions: [FrameworkAction::schedule(IntegratorAction::SendDecoy, 1, delay)],
             },
         }
         .unwrap();
@@ -940,11 +934,11 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(1.0).try_into().unwrap()
-                ),
+                )],
             }
         }
         .unwrap();
@@ -963,4 +957,37 @@ mod tests {
     // TODO: simulator is "perfect" in that it always jumps to the soonest event and an
     // integrator is not in that they don't know the soonest event. need some way to simulate this
     // and also the tests for it.
+
+    #[cfg(test)]
+    mod machines {
+        use super::Simulator;
+        use chaff::framework::Framework;
+        use chaff_capture::trace::{Direction, Trace};
+        use chaff_machines::constant;
+
+        #[test]
+        pub fn test_constant_machine() {
+            let machine = constant::construct();
+            let framework = Framework::new(machine, rand::rng());
+            let trace = Trace::new(
+                [Direction::Send; 7],
+                [0, 123, 100_000, 200_000, 104, 204_213, 1_000_000],
+                [0; 7],
+            );
+            let mut simulator = Simulator::with(framework, trace, rand::rng());
+            let (out, _) = simulator.run();
+
+            let deltas = out.timing_deltas();
+
+            assert!(
+                deltas
+                    .iter()
+                    .filter(|delta| **delta != 0 && **delta != 100_000)
+                    .count()
+                    == 0,
+                "found poorly spaced deltas: {deltas:?}",
+            );
+            assert!(out.len() < 35, "len: {}", out.len());
+        }
+    }
 }

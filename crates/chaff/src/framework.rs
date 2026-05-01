@@ -162,8 +162,8 @@ impl<R: Rng + CryptoRng> Framework<R> {
 
         // initialisation
         if !self.runtime.initialised {
-            if let Some(action) = &self.machine.states[self.runtime.state].action {
-                actions.push(action.clone());
+            if !&self.machine.states[self.runtime.state].actions.is_empty() {
+                actions.extend(self.machine.states[self.runtime.state].actions.clone());
             }
             self.runtime.initialised = true;
         }
@@ -200,8 +200,8 @@ impl<R: Rng + CryptoRng> Framework<R> {
                     }
                 }
 
-                if let Some(action) = &self.machine.states[new_state].action {
-                    actions.push(action.clone());
+                if !&self.machine.states[self.runtime.state].actions.is_empty() {
+                    actions.extend(self.machine.states[self.runtime.state].actions.clone());
                 }
             }
         }
@@ -281,10 +281,10 @@ mod tests {
             vec![
                 State::new(
                     Some(trans_probs.clone()),
-                    Some(IntegratorAction::SendDecoy),
+                    [IntegratorAction::SendDecoy],
                     None,
                 ),
-                State::new(None, Some(IntegratorAction::SendDecoy), None),
+                State::new(None, [IntegratorAction::SendDecoy], None),
             ],
             [],
             None,
@@ -305,10 +305,10 @@ mod tests {
             vec![
                 State::new(
                     Some(trans_probs.clone()),
-                    Some(IntegratorAction::SendDecoy),
+                    [IntegratorAction::SendDecoy],
                     None,
                 ),
-                State::new(None, Some(IntegratorAction::SendDecoy), None),
+                State::new(None, [IntegratorAction::SendDecoy], None),
             ],
             [],
             None,
@@ -334,10 +334,10 @@ mod tests {
             vec![
                 State::new(
                     Some(trans_probs.clone()),
-                    Some(IntegratorAction::SendDecoy),
+                    [IntegratorAction::SendDecoy],
                     None,
                 ),
-                State::new(None, Some(FrameworkAction::CancelAll), None),
+                State::new(None, [FrameworkAction::CancelAll], None),
             ],
             [],
             None,
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_get_trans_probs_state_with_no_trans_probs() {
         let machine = Machine::try_new(
-            vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
+            vec![State::new(None, [IntegratorAction::SendDecoy], None)],
             [],
             None,
         )
@@ -377,8 +377,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans_probs), None::<Action>, None),
-                State::new(None, Some(IntegratorAction::SendDecoy), None),
+                State::new::<Action, _>(Some(trans_probs), [], None),
+                State::new(None, [IntegratorAction::SendDecoy], None),
             ],
             [],
             None,
@@ -401,8 +401,8 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
-                State::new(None, Some(FrameworkAction::CancelAll), None),
+                State::new(Some(trans_probs), [IntegratorAction::SendDecoy], None),
+                State::new(None, [FrameworkAction::CancelAll], None),
             ],
             [None, None],
             None,
@@ -432,8 +432,8 @@ mod tests {
                 .unwrap();
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans_probs), Some(IntegratorAction::SendDecoy), None),
-                State::new(None, Some(FrameworkAction::CancelQueue(0)), None),
+                State::new(Some(trans_probs), [IntegratorAction::SendDecoy], None),
+                State::new(None, [FrameworkAction::CancelQueue(0)], None),
             ],
             [None, None],
             None,
@@ -470,11 +470,11 @@ mod tests {
                 transitions: [Event::SendNormal => schedule_decoy],
             },
             state schedule_decoy {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(999.0).try_into().unwrap()
-                ),
+                )],
             }
         }
         .unwrap();
@@ -500,14 +500,14 @@ mod tests {
 
         let machine = Machine::try_new(
             vec![
-                State::new(Some(trans_probs), None::<Action>, None),
+                State::new::<Action, _>(Some(trans_probs), [], None),
                 State::new(
                     None,
-                    Some(FrameworkAction::schedule(
+                    [FrameworkAction::schedule(
                         IntegratorAction::SendDecoy,
                         0,
                         DistrKind::Constant(999.0).try_into().unwrap(),
-                    )),
+                    )],
                     None,
                 ),
             ],
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_all_via_queue() {
         let machine = Machine::try_new(
-            vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
+            vec![State::new(None, [IntegratorAction::SendDecoy], None)],
             [None; 3],
             None,
         )
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn test_perform_action_cancel_queue_via_queue() {
         let machine = Machine::try_new(
-            vec![State::new(None, Some(IntegratorAction::SendDecoy), None)],
+            vec![State::new(None, [IntegratorAction::SendDecoy], None)],
             [None, None],
             None,
         )
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn test_perform_action_schedule_via_queue() {
         let machine = Machine::try_new(
-            vec![State::new(None, None::<Action>, None)],
+            vec![State::new::<Action, _>(None, [], None)],
             [None, None],
             None,
         )
@@ -643,7 +643,7 @@ mod tests {
                 transitions: [Event::QueuePopped(0) => release],
             },
             state release {
-                action: IntegratorAction::ReleaseBlock
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -689,15 +689,15 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 transitions: [Event::QueuePopped(0) => jump],
             },
             state jump {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 transitions: [Event::SendNormal => end],
             },
             state end {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     fn test_framework_action_schedule_samples_delay() {
         let machine = Machine::try_new(
-            vec![State::new(None, Some(IntegratorAction::ReleaseBlock), None)],
+            vec![State::new(None, [IntegratorAction::ReleaseBlock], None)],
             [None],
             None,
         )
@@ -748,26 +748,26 @@ mod tests {
         let machine = machine! {
             queues: [Some(1)],
             state init {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     long_delay,
-                ),
+                )],
                 transitions: [
                     Event::ReceiveNormal => init,
                     Event::SendNormal => overflow,
                 ],
             },
             state overflow {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     long_delay,
-                ),
+                )],
                 transitions: [Event::QueueFull(0) => end],
             },
             state end {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -793,16 +793,16 @@ mod tests {
         let machine = machine! {
             queues: [],
             state init {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
                 transitions: [Event::SendNormal => decoy_burst],
             },
             state decoy_burst {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 transitions: [Event::StateBudgetExhausted => end],
                 budget: 1,
             },
             state end {
-                action: IntegratorAction::ReleaseBlock
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -825,12 +825,12 @@ mod tests {
         let machine = machine! {
             queues: [None],
             state init {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
                 transitions: [Event::StateBudgetExhausted => end],
                 budget: 1,
             },
             state end {
-                action: IntegratorAction::ReleaseBlock
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -856,11 +856,11 @@ mod tests {
         let machine = machine! {
             queues: [],
             state init {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
                 transitions: [Event::ReceiveNormal => decoy_burst],
             },
             state decoy_burst {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 transitions: [
                     Event::SendNormal => decoy_burst,
                     Event::StateBudgetExhausted => end
@@ -868,7 +868,7 @@ mod tests {
                 budget: 2,
             },
             state end {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 budget: 0,
             }
         }
@@ -899,26 +899,26 @@ mod tests {
         let machine = machine! {
             queues: [Some(2)],
             state init {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
                 transitions: [Event::ReceiveNormal => fill_queue],
             },
             state fill_queue {
-                action: FrameworkAction::schedule(
+                actions: [FrameworkAction::schedule(
                     IntegratorAction::SendDecoy,
                     0,
                     DistrKind::Constant(Duration::from_millis(15).as_secs_f64()).try_into().unwrap(),
-                ),
+                )],
                 transitions: [
                     Event::SendNormal => fill_queue,
                     Event::ReceiveNormal => wait_for_queue_drain
                 ],
             },
             state wait_for_queue_drain {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
                 transitions: [Event::QueueEmpty(0) => end],
             },
             state end {
-                action: IntegratorAction::ReleaseBlock,
+                actions: [IntegratorAction::ReleaseBlock],
             }
         }
         .unwrap();
@@ -1002,7 +1002,7 @@ mod tests {
             queues: [None],
             budget: Absolute(1),
             state init {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
             },
         }
         .unwrap();
@@ -1047,7 +1047,7 @@ mod tests {
             queues: [None],
             budget: Proportion(0.5),
             state init {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
             },
         }
         .unwrap();
@@ -1101,7 +1101,7 @@ mod tests {
             queues: [],
             budget: Absolute(0),
             state init {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
                 budget: 1
             },
         }
@@ -1215,7 +1215,7 @@ mod tests {
             queues: [None],
             budget: Absolute(1),
             state init {
-                action: IntegratorAction::SendDecoy,
+                actions: [IntegratorAction::SendDecoy],
             }
         }
         .unwrap();

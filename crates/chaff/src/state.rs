@@ -17,7 +17,7 @@ pub struct State {
     pub(crate) trans_probs: Option<TransitionProbs>,
 
     /// The action to take on transitioning to this state.
-    pub(crate) action: Option<Action>,
+    pub(crate) actions: Box<[Action]>,
 
     /// The number of decoys this state can send via self-transition (includes initial transition to
     /// this state).
@@ -27,14 +27,24 @@ pub struct State {
 impl State {
     /// Create a new state with the given [`TransitionProbs`], [`Action`] to take on transition, and
     /// a budget for the number of decoys the state can send during self-transition.
-    pub fn new(
+    pub fn new<A, I>(
         trans_probs: impl Into<Option<TransitionProbs>>,
-        action: Option<impl Into<Action>>,
+        actions: I,
         decoy_budget: Option<usize>,
-    ) -> Self {
+    ) -> Self
+    where
+        I: IntoIterator<Item = A>,
+        A: Into<Action>,
+    {
+        let actions_boxed = actions
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<Action>>()
+            .into_boxed_slice();
+
         Self {
             trans_probs: trans_probs.into(),
-            action: action.map(std::convert::Into::into),
+            actions: actions_boxed,
             decoy_budget,
         }
     }
