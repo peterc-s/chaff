@@ -24,49 +24,67 @@ fn machines(c: &mut Criterion) {
         .join("data/tik_tok_undefended.chaff");
     let dataset = chaff::try_parse(dataset_dir).unwrap();
 
-    let delay_distr: Distr = DistrKind::Normal {
-        mean: 0.015,
-        std_dev: 0.05,
+    {
+        let delay_distr: Distr = DistrKind::Normal {
+            mean: 0.015,
+            std_dev: 0.05,
+        }
+        .try_into()
+        .unwrap();
+        let timeout: Distr = Duration::from_secs(1).try_into().unwrap();
+        let machine = wtf_pad_lite::construct(delay_distr, timeout);
+
+        c.bench_function("tiktok undefended wtf_pad_lite normal", |b| {
+            b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
+        });
     }
-    .try_into()
-    .unwrap();
-    let timeout: Distr = Duration::from_secs_f64(0.4).try_into().unwrap();
-    let machine = wtf_pad_lite::construct(delay_distr, timeout);
 
-    c.bench_function("tiktok undefended wtf_pad_lite normal", |b| {
-        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
-    });
+    {
+        let delay_distr: Distr = Duration::from_secs_f64(0.015).try_into().unwrap();
+        let timeout: Distr = Duration::from_secs(1).try_into().unwrap();
+        let machine = wtf_pad_lite::construct(delay_distr, timeout);
 
-    let machine = constant::construct();
-
-    c.bench_function("tiktok undefended const", |b| {
-        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
-    });
-
-    let machine = machine! {
-        queues: [],
-        state double {
-            actions: [IntegratorAction::SendDecoy],
-            transitions: [
-                Event::SendNormal => double,
-            ],
-        },
+        c.bench_function("tiktok undefended wtf_pad_lite constant", |b| {
+            b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
+        });
     }
-    .unwrap();
 
-    c.bench_function("tiktok undefended double", |b| {
-        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
-    });
+    {
+        let machine = constant::construct();
 
-    let machine = machine! {
-        queues: [],
-        state init {},
+        c.bench_function("tiktok undefended const", |b| {
+            b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
+        });
     }
-    .unwrap();
 
-    c.bench_function("tiktok undefended no_op", |b| {
-        b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
-    });
+    {
+        let machine = machine! {
+            queues: [],
+            state double {
+                actions: [IntegratorAction::SendDecoy],
+                transitions: [
+                    Event::SendNormal => double,
+                ],
+            },
+        }
+        .unwrap();
+
+        c.bench_function("tiktok undefended double", |b| {
+            b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
+        });
+    }
+
+    {
+        let machine = machine! {
+            queues: [],
+            state init {},
+        }
+        .unwrap();
+
+        c.bench_function("tiktok undefended no_op", |b| {
+            b.iter(|| simulate::run_dataset(black_box(&dataset), &None, black_box(&machine)));
+        });
+    }
 }
 
 criterion_group!(
