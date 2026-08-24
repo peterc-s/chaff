@@ -23,9 +23,9 @@ chaff-machines = { version = "0.1.0", path = "../chaff-machines/" }
 chaff-capture = { version = "0.1.0", path = "../chaff-capture/" }
 chaff-datasets = { version = "0.1.0", path = "../chaff-datasets/" }
 
-borsh = { version = "1.6.1" }
-bpaf = { version = "0.9.24", features = ["derive"] }
-rand = "0.10.1"
+borsh = { version = "1.8.0" }
+bpaf = { version = "0.9.27", features = ["derive"] }
+rand = "0.10.2"
 mac_address = "1.1.8"
-pcap = "2.4.0"
+pcap = "2.5.0"
 iterstats = "0.7.0"
