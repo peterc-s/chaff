@@ -2,7 +2,7 @@
   description = "Anti Website Fingerprinting Library";
 
   inputs = {
-    nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
+    nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
     flake-utils.url = "github:numtide/flake-utils";
 
     treefmt = {
